@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>运动方案与每周计划</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#edf3fa;color:#172740;font:16px/1.55 system-ui,"PingFang SC",sans-serif}main{max-width:1160px;margin:32px auto;padding:32px;background:#fff;border:1px solid #dbe5f1;border-radius:22px;box-shadow:0 12px 35px #25406512}h1,h2,p{margin:0}h1{font-size:32px}h2{font-size:20px}.muted,small,footer{color:#536780}.badge{border-radius:100px;padding:4px 12px;background:#eaf2ff;color:#2856a0;font-weight:650;font-size:14px}.heading,.toolbar,.dayhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin:20px 0 12px;background:#f1f6fe;border-radius:12px}.stats div{padding:12px 16px}.stats strong,.stats small{display:block}.stats strong{font-size:22px}.stage{font-size:14px;color:#405777}.toolbar{margin:25px 0 10px}.tabs,.actions{display:flex;gap:7px;flex-wrap:wrap}.tabs button{font:inherit;cursor:pointer;background:white;color:#38516f;border:1px solid #dce5f0;border-radius:8px;padding:5px 11px}.tabs [aria-pressed=true]{background:#245cb9;color:white;border-color:#245cb9}.day{border-top:1px solid #e2eaf3;padding:13px 0}.dayhead strong{margin-right:12px}.dose{font-weight:650}.actions{align-items:flex-start;margin-top:8px}.action{max-width:100%;border-radius:9px;overflow:hidden}.action summary{cursor:pointer;padding:7px 10px;font-weight:650;font-size:14px}.action[open]{flex-basis:100%}.info{padding:2px 12px 10px;font-size:14px}.warm{background:#fff0da;color:#874609}.cardio{background:#e6f1ff;color:#174f9d}.strength{background:#f0e9ff;color:#6434a0}.cool{background:#e6f6eb;color:#176242}.note{margin-top:7px;font-size:13px;color:#405777}.foot{margin-top:12px;font-size:13px}button:focus-visible,summary:focus-visible{outline:2px solid #2161c5;outline-offset:2px}@media(max-width:700px){main{margin:12px;padding:18px}h1{font-size:25px}.stats{grid-template-columns:repeat(2,1fr)}}
+
+body{background:#eef3fa}main{padding:0 36px 25px;overflow:visible}.heading{margin:0 -36px 20px;padding:23px 36px;background:linear-gradient(105deg,#1855ad,#317ad4);color:#fff;border-radius:21px 21px 0 0}.heading h1{font-size:29px}.heading .badge{background:#ffffff26;color:#fff}.stats{gap:12px;background:none;margin-top:13px}.stats div{background:#f5f8fd;border:1px solid #dbe7f7;border-radius:10px}.stats strong{color:#17478a}.stage{padding:10px 14px;border-left:3px solid #6294d7;background:#f2f6fc;border-radius:4px}.toolbar{margin-top:22px}.legend{display:flex;flex-wrap:wrap;gap:7px;margin:11px 0}.legend span{padding:3px 9px;border-radius:6px;font-size:13px;font-weight:650}#days{border:1px solid #dce6f3;border-radius:10px}.columns,.day{display:grid;grid-template-columns:150px minmax(0,1fr) 108px;gap:10px;align-items:center;padding:10px 14px}.columns{background:#f1f5fb;border-radius:9px 9px 0 0;color:#465e7e;font-size:14px;font-weight:650}.dayhead{display:contents}.dayhead strong{display:block;color:#23599d;margin:0}.dayhead .muted{font-size:13px}.day[hidden]{display:none}.actions{margin:0;grid-column:2}.dose{grid-column:3;grid-row:1;text-align:right}.columns span:last-child{text-align:right}.day .note{grid-column:2;margin:0}.action{position:relative;overflow:visible}.action[open]{flex-basis:auto}.action summary{list-style:none}.action summary::-webkit-details-marker{display:none}.info{display:none;position:absolute;z-index:3;top:100%;left:0;width:min(250px,72vw);padding:10px 13px;background:#fff;color:#293d59;border:1px solid #d6e2f1;border-radius:8px;box-shadow:0 7px 22px #20385022}.action[open] .info,.action:focus-within:not([data-dismissed]) .info{display:block}@media(hover:hover){.action:hover:not([data-dismissed]) .info{display:block}}.action:focus-within,.action:hover,.action[open]{z-index:4}@media(max-width:700px){main{padding:0 14px 18px}.heading{margin:0 -14px 15px;padding:16px 14px}.heading h1{font-size:23px}.columns{display:none}.day{grid-template-columns:1fr auto}.actions,.day .note{grid-column:1/-1}.dose{grid-column:2}}
+
+main{margin:20px auto;padding:0 26px 15px}
+.heading{margin:0 -26px 12px;padding:13px 26px}
+.heading h1{font-size:25px}
+.stats{gap:8px;margin:0 0 8px}
+.stats div{padding:6px 12px}
+.stats strong{font-size:18px}
+.stats small{font-size:12px}
+.stage{padding:5px 10px;font-size:13px}
+.toolbar{margin:13px 0 5px;gap:6px}
+.toolbar h2{font-size:17px}
+.tabs{gap:4px}
+.tabs button{padding:2px 8px;font-size:13px}
+.legend{align-items:center;margin:5px 0 7px;gap:5px}
+.legend span{padding:2px 7px;font-size:12px}
+.hint{margin-left:auto;font-size:12px}
+.columns,.day{grid-template-columns:125px minmax(0,1fr) 88px;gap:5px 10px;padding:5px 10px;font-size:14px}
+.actions{gap:4px}
+.action summary{padding:3px 6px;font-size:13px}
+.foot{margin-top:7px;font-size:12px}
+@media(max-width:700px){
+  main{margin:8px;padding:0 10px 12px}
+  .heading{margin:0 -10px 9px;padding:10px}
+  .heading h1{font-size:20px}
+  .day{grid-template-columns:1fr auto}
+  .hint{margin-left:0}
+}
+</style>
+<main>
+<header class="heading"><h1>运动方案与每周计划</h1><span class="badge">演示数据</span></header>
+<div class="stats" id="stats"></div>
+<p class="stage"><strong>基础适应期</strong> · 有氧与力量 · 中等偏低强度 · 复评后决定是否增加跑段</p>
+<div class="toolbar"><h2>本周安排</h2><nav class="tabs" aria-label="筛选训练日期" id="tabs"></nav></div>
+<div class="legend" aria-label="动作类别"><span class="warm">热身</span><span class="cardio">有氧</span><span class="strength">力量／核心</span><span class="cool">拉伸／放松</span><small class="hint">悬停或点击动作查看详情</small></div>
+<section id="days" aria-label="训练计划"><div class="columns"><span>日期</span><span>训练安排</span><span>时长</span></div><div id="day-rows"></div></section>
+<footer class="foot">周训练时间包含热身、放松与组间休息。主动恢复单独统计。</footer>
+</main>
+<script>
+const warm = ['warm','热身','关节活动与动态热身','8 分钟','按顺序活动踝、膝、髋，从小幅度开始。'];
+const cardio = ['cardio','有氧','走跑交替','20 分钟','慢跑与快走交替。若当天状态不佳，可改为快走。'];
+const cool = ['cool','放松','慢走与拉伸','7 分钟','结束主体训练后逐步放慢步伐。'];
+const days = [
+  ['周一','走跑与力量',40,[warm,cardio,['strength','力量','靠墙静蹲','20 秒 × 2 组','组间休息 45 秒。保持背部贴墙。'],cool]],
+  ['周二','休息'],
+  ['周三','力量与核心',40,[warm,['strength','力量','徒手深蹲','12 次 × 3 组','组间休息 60 秒。保持动作平稳。可用椅子坐站作为替代示例。'],['strength','核心','平板支撑','20 秒 × 3 组','组间休息 45 秒。保持躯干稳定。'],cool],'深蹲与核心训练之间预留换项时间。'],
+  ['周四','休息'],
+  ['周五','走跑与力量',40,[warm,cardio,['strength','力量','哑铃划船','每手 2 kg · 10 次 × 2 组','组间休息 60 秒。保持躯干稳定。'],cool]],
+  ['周六','休息'],
+  ['周日','主动恢复',20,[['cardio','有氧','轻松步行','20 分钟','按舒适节奏行走。']], '单独统计，不计入本周训练总量。']
+];
+const training = days.filter(day => day[2] && day[1] !== '主动恢复');
+const stats = [['训练频率','每周 '+training.length+' 次'],['单次时长','约 '+training[0][2]+' 分钟'],['周训练总时长','约 '+training.reduce((sum,day)=>sum+day[2],0)+' 分钟'],['复评时间','第 4 周末']];
+document.querySelector('#stats').innerHTML = stats.map(([label,value])=>'<div><small>'+label+'</small><strong>'+value+'</strong></div>').join('');
+const plan = document.querySelector('#day-rows');
+plan.innerHTML = days.map(([day,title,minutes,actions,note],index)=>`
+  <article class="day" data-day="${index}">
+    <div class="dayhead"><div><strong>${day}</strong><span class="muted">${title}</span></div>
+    ${minutes ? `<span class="dose">${index===6?'':'约 '}${minutes} 分钟</span>` : ''}</div>
+    ${actions ? `<div class="actions">${actions.map(([color,,name,dose,info])=>`
+      <details class="action ${color}"><summary>${name} · ${dose}</summary>
+      <p class="info">${info}</p></details>`).join('')}</div>` : ''}
+    ${note ? `<p class="note">${note}</p>` : ''}
+  </article>`).join('');
+for (const action of plan.querySelectorAll('details')) {
+  action.addEventListener('mouseleave', () => delete action.dataset.dismissed);
+  action.addEventListener('focusout', event => {
+    if (!action.contains(event.relatedTarget)) delete action.dataset.dismissed;
+  });
+  action.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      action.open = false;
+      action.dataset.dismissed = '';
+    }
+  });
+}
+const tabs = document.querySelector('#tabs');
+tabs.innerHTML = ['全周',...days.map(day=>day[0])].map((label,index)=>`<button type="button" data-filter="${index-1}" aria-pressed="${index===0}">${label}</button>`).join('');
+tabs.addEventListener('click',event=>{
+  const button = event.target.closest('button');
+  if (!button) return;
+  const index = Number(button.dataset.filter);
+  for (const tab of tabs.children) tab.setAttribute('aria-pressed',String(tab===button));
+  for (const day of plan.children) day.hidden = index!==-1 && Number(day.dataset.day)!==index;
+});
+</script>
+</html>
