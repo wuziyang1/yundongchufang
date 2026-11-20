@@ -12,7 +12,7 @@ from app.prompts import profile as prompt
 from app.schemas.profile import ProfileResult
 from app.schemas.record import HealthRecord
 from app.services.common import current_versions, now_iso
-from app.services.data_loader import save_profile_result
+from app.services.data_loader import clear_emergency, save_profile_result
 
 DISCLAIMER = "本画像由 AI 基于所提供档案生成，仅供参考，不作为医疗诊断依据。"
 
@@ -68,6 +68,8 @@ async def stream_profile(record: HealthRecord) -> AsyncIterator[tuple[str, Any]]
             # mock 占位结果不落盘，避免污染 data/profiles 的真实画像留档
             if provider.name != "mock":
                 save_profile_result(result.model_dump())
+            # 生成成功即解除熔断：恢复正常留档展示
+            clear_emergency(record.student_id)
         except OSError:
             # 落盘只是旁路留档，磁盘问题不应中断画像返回
             pass

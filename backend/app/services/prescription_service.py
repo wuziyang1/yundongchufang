@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -21,9 +22,10 @@ from app.schemas.prescription import (
     RiskNote,
 )
 from app.schemas.record import HealthRecord
-from app.services import rag
+from app.services import literature, rag
 from app.services.common import current_versions, now_iso
 from app.services.data_loader import (
+    clear_emergency,
     exercise_index,
     exercise_library,
     save_prescription_result,
@@ -262,15 +264,20 @@ async def stream_prescription(
     # 模型只要用了候选集合内的动作就不算违规
     candidate_ids = {item["id"] for item in candidates}
 
+    # 权威资料检索（Milvus）与下面两步互不依赖，先发出去并行跑；不可用时返回空列表
+    excerpts_task = asyncio.create_task(literature.retrieve_excerpts(record_view))
+
     # RAG：候选动作按健康状况排序截断，知识卡片检索相关子集
     candidates = await rag.rank_exercises(candidates, record_view)
     cards = await rag.retrieve_knowledge_for_prescription(record_view)
+    excerpts = await excerpts_task
 
     base_prompt = prompt.build_user_prompt(
         record=record_view,
         age=age,
         candidates=candidates,
         knowledge_cards=cards,
+        excerpts=excerpts,
     )
 
     user_prompt = base_prompt
@@ -349,6 +356,8 @@ async def stream_prescription(
 
         try:
             save_prescription_result(result.model_dump())
+            # 生成成功即解除熔断：恢复正常留档展示
+            clear_emergency(record.student_id)
         except OSError:
             # 落盘只是旁路留档，磁盘问题不应中断处方返回
             pass

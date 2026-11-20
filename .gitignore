@@ -4,11 +4,10 @@ __pycache__/
 .env
 .DS_Store
 .~*
-backend/app/data/custom_students/
-backend/app/data/generated/
 backend/app/data/profiles/
 backend/app/data/prescriptions/
 
 # 数据生成脚本的密钥与中间产物
 finetune/datagen/api_key.txt
 finetune/datagen/output/
+backend/app/data/emergency_records.json

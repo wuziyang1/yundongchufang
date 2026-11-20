@@ -11,6 +11,8 @@ dependencies = [
     "openai>=1.59.6",
     "httpx>=0.28.1",
     "anthropic>=2.6.0",
+    # 权威资料知识库（Milvus）的在线检索；版本与 rag/ 离线入库保持一致
+    "pymilvus>=2.5.15,<2.6",
 ]
 
 [tool.uv]

@@ -427,7 +427,9 @@ async def rank_exercises(
 
 
 def status() -> dict[str, Any]:
-    """/meta 用的 RAG 状态摘要。"""
+    """/meta 用的 RAG 状态摘要（含 Milvus 权威资料知识库的检索状态）。"""
+    from app.services import literature  # literature 引用了本模块的学段推断，延迟导入避免循环
+
     index = _load_index() if INDEX_PATH.is_file() else None
     indexed = (
         {name: len(vectors) for name, vectors in index["collections"].items()} if index else {}
@@ -439,4 +441,5 @@ def status() -> dict[str, Any]:
         "knowledge_top_k": settings.rag_knowledge_top_k,
         "exercise_limit": settings.rag_exercise_limit,
         "indexed_counts": indexed,
+        "knowledge_base": literature.status(),
     }

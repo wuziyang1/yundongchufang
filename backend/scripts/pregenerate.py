@@ -1,33 +1,31 @@
-"""预生成若干学生的画像与处方并落盘，供前端秒开演示。
+"""预生成若干学生的画像与处方并留档，供前端秒开演示。
 
 用法：
     uv run python -u scripts/pregenerate.py              # 生成默认的 5 份
     uv run python -u scripts/pregenerate.py BJ2025090314 # 只生成指定学生
-    uv run python -u scripts/pregenerate.py --all        # 全部 20 份
+    uv run python -u scripts/pregenerate.py --all        # 全部学生
 
-结果写入 app/data/pregenerated/<student_id>.json，由 /api/v1/pregenerated 读取。
+画像与处方由服务层在生成成功时落盘到 app/data/profiles/<学号>.json 与
+app/data/prescriptions/<学号>.json（同一学号覆盖），由 /api/v1/pregenerated 读取，
+与线上实时生成共用同一套留档。
 串行执行：并发会触发上游限流，单次调用会从 1 分钟拖到十几分钟。
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import DATA_DIR, settings  # noqa: E402
+from app.config import settings  # noqa: E402
 from app.schemas.record import HealthRecord  # noqa: E402
-from app.services.common import now_iso  # noqa: E402
-from app.services.data_loader import find_student, mock_students  # noqa: E402
+from app.services.data_loader import find_student, mock_students, record_emergency  # noqa: E402
 from app.services.prescription_service import stream_prescription  # noqa: E402
 from app.services.profile_service import analyze_profile  # noqa: E402
 from app.services.safety import check_emergency  # noqa: E402
-
-OUT_DIR = DATA_DIR / "pregenerated"
 
 # 默认预生成的 5 份，覆盖不同学段、性别、体能水平与约束类型
 DEFAULT_IDS = [
@@ -47,29 +45,18 @@ async def generate_one(student_id: str) -> bool:
 
     record = HealthRecord.model_validate(student)
     name = record.name
-    payload: dict = {
-        "student_id": student_id,
-        "name": name,
-        "generated_at": now_iso(),
-        "model": settings.active_model,
-        "thinking": settings.thinking_enabled,
-        "profile": None,
-        "prescription": None,
-        "emergency": None,
-    }
 
     emergency = check_emergency(student)
     if emergency is not None:
-        payload["emergency"] = emergency.model_dump()
-        _save(student_id, payload)
-        print(f"  {name}：命中急症熔断，已存（不调用模型）")
+        record_emergency(student_id, name, emergency.model_dump())
+        print(f"  {name}：命中急症熔断，已留档熔断记录（不调用模型）")
         return True
 
-    # 画像与处方两个模块各自独立生成，互不传递结果
+    # 画像与处方两个模块各自独立生成，互不传递结果；
+    # 各自成功后由服务层覆盖留档到 profiles/ 与 prescriptions/
     t0 = time.time()
-    profile = await analyze_profile(record)
+    await analyze_profile(record)
     t_profile = time.time() - t0
-    payload["profile"] = profile.model_dump()
 
     t1 = time.time()
     result = None
@@ -88,23 +75,12 @@ async def generate_one(student_id: str) -> bool:
         print(f"  {name}：处方未产出结果")
         return False
 
-    payload["prescription"] = result.model_dump()
-    payload["elapsed"] = {"profile": round(t_profile, 1), "prescription": round(t_rx, 1)}
-    _save(student_id, payload)
     days = sum(1 for d in result.weekly_plan if d.is_training_day)
     print(
         f"  {name}：完成（画像 {t_profile:.0f}s + 处方 {t_rx:.0f}s"
         f"，重试 {retries} 次，训练日 {days} 天）"
     )
     return True
-
-
-def _save(student_id: str, payload: dict) -> None:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / f"{student_id}.json"
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
 
 
 async def main() -> None:
@@ -127,7 +103,7 @@ async def main() -> None:
         if await generate_one(student_id):
             ok += 1
     print(f"\n完成 {ok}/{len(ids)}，总耗时 {time.time() - t0:.0f}s")
-    print(f"输出目录：{OUT_DIR}")
+    print("留档目录：app/data/profiles 与 app/data/prescriptions")
 
 
 if __name__ == "__main__":

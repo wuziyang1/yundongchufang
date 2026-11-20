@@ -28,6 +28,8 @@ def _env(name: str, default: str = "") -> str:
 class Settings:
     knowledge_dir: Path = Path(_env("RAG_KNOWLEDGE_DIR") or RAG_DIR / "knowledge").expanduser()
     cache_dir: Path = RAG_DIR / "cache"
+    # 按文档定制的清洗规则（跳过页、额外的章节标题、丢弃的附录、字形修正等）
+    doc_rules_path: Path = Path(_env("RAG_DOC_RULES") or RAG_DIR / "doc_rules.toml").expanduser()
 
     milvus_uri: str = f"http://{_env('MILVUS_HOST', '127.0.0.1')}:{_env('MILVUS_PORT', '19530')}"
     milvus_user: str = _env("MILVUS_USER")

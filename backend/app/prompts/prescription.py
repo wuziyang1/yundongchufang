@@ -81,21 +81,39 @@ def _format_exercise(exercise: dict[str, Any]) -> str:
     )
 
 
+def _format_excerpts(excerpts: list[dict[str, Any]]) -> str:
+    """权威资料摘录：每条先给出处，再给原文。"""
+    return "\n".join(
+        f"[资料{number}] 出处：{item['source']}\n{item['content']}"
+        for number, item in enumerate(excerpts, 1)
+    )
+
+
 def build_user_prompt(
     *,
     record: dict[str, Any],
     age: int | None,
     candidates: list[dict[str, Any]],
     knowledge_cards: list[dict[str, Any]],
+    excerpts: list[dict[str, Any]] | None = None,
 ) -> str:
     cards = "\n".join(
         f"[{card['id']}] {card['title']}（{card['domain']}）：{card['content']}"
         for card in knowledge_cards
     )
     exercises = "\n".join(_format_exercise(item) for item in candidates)
+    # 权威资料摘录是知识卡片的补充；知识库不可用时为空，prompt 与原来完全一致
+    literature = (
+        "权威资料摘录（从国家标准、指南与研究文献中按该学生情况检索，供确定训练量、强度与注意事项时参考；"
+        "须服从系统指令中的硬性约束，与知识卡片不一致时取更保守的做法）：\n"
+        f"{_format_excerpts(excerpts)}\n\n"
+        if excerpts
+        else ""
+    )
     return (
         "可参考的知识卡片（已按该学生的健康情况检索出的相关子集）：\n"
         f"{cards}\n\n"
+        f"{literature}"
         "可用动作候选集（已按该学生的年龄与校园默认器材过滤，只能从中选择）：\n"
         f"{exercises}\n\n"
         f"学生年龄：{age if age is not None else '未知'}\n\n"

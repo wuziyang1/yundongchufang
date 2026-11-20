@@ -23,15 +23,15 @@ cd backend && uv run uvicorn app.main:app --reload --port 8077
 
 - **★ 载入已有结果**：读取该学生最近一次保存的画像与处方，**3 毫秒出结果**，不调用模型。
   下拉里带 ★ 的学生表示已有结果可加载：既包括脚本预生成的（默认 5 份），也包括
-  在页面上实时生成过的——每次生成的画像与处方都会自动在后端落盘，刷新页面后仍可再次载入。
+  在页面上实时生成过的——画像与处方各自落盘到后端留档目录，刷新页面后仍可再次载入。
 - **重新生成**：实时调用模型。生成期间右侧滑出「AI 生成过程」面板，模型的思考过程
   按 Markdown 实时渲染（结构化 JSON 不展示原文，只显示写入进度），按钮同时变为
   「■ 停止生成」，可随时中断。耗时取决于 `LLM_THINKING`：关思考约 80 秒，
   开思考（当前默认，输出思考内容供展示）约数分钟。
 
 除内置档案外，点工具条的 **「✎ 自行录入档案」** 可展开录入表单，填写基本信息、体测成绩、
-健康状况与运动习惯；点「保存档案并生成处方」后，档案会保存为
-`backend/app/data/custom_students/{学号}.json`（学号由服务端生成，`CU` 前缀），
+健康状况与运动习惯；点「保存档案并生成处方」后，档案会追加进
+`backend/app/data/mock_students.json`（学号由服务端生成，`CU` 前缀），
 该学生随即出现在下拉列表中，并直接走画像 + 处方生成流程。
 
 报告页是纯 HTML 流式页面：宽度跟随窗口（上限 1180px）、高度随内容增长，窄屏时分栏自动折行，
@@ -109,8 +109,6 @@ ANTHROPIC_COMPAT_MODEL=glm-5.3
 
 两次 LLM 调用，其余是代码。控制流由代码决定，不由模型决定。
 
-完整技术架构图（含前端/API/服务/RAG/LLM 接入/数据资产六层与实测指标）：[docs/技术架构图.svg](docs/技术架构图.svg)
-
 ### 代码约束只有三处
 
 LLM 真正不可靠的地方才用代码兜住，其余交给模型：
@@ -128,10 +126,10 @@ LLM 真正不可靠的地方才用代码兜住，其余交给模型：
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/meta` | 版本、模型、资产规模 |
-| GET | `/api/v1/students` | mock 档案列表（摘要） |
+| GET | `/api/v1/students` | 学生档案列表（摘要，含录入追加的档案） |
 | GET | `/api/v1/students/{id}` | 单份完整档案 |
-| GET | `/api/v1/pregenerated` | 已有生成结果可加载的学生清单（线上生成 ∪ 预生成） |
-| GET | `/api/v1/pregenerated/{id}` | 读取已保存的画像与处方（不调用模型） |
+| GET | `/api/v1/pregenerated` | 有留档结果可载入的学生清单（画像 ∪ 处方） |
+| GET | `/api/v1/pregenerated/{id}` | 从 profiles/ 与 prescriptions/ 拼装读取留档结果（不调用模型） |
 | GET | `/api/v1/exercises` | 动作库全量 |
 | GET | `/api/v1/exercises/{id}` | 单个动作详情 |
 | GET | `/api/v1/knowledge` | 知识卡片全量 |
@@ -188,10 +186,9 @@ curl -s -X POST http://127.0.0.1:8077/api/v1/profile:analyze \
 |---|---|---|
 | `app/data/exercises.json` | 66 个动作，含类型、器械、场地、冲击等级、最低年龄、风险标签、动作要领、常见错误、替代动作 | v1.0.0 |
 | `app/data/knowledge.json` | 34 张知识卡片，带 ID 供处方引用溯源 | v1.0.0 |
-| `app/data/mock_students.json` | 20 份模拟档案 | v1.0.0 |
+| `app/data/mock_students.json` | 学生档案（内置 mock 20 份 + 前端录入追加），唯一档案来源 | v1.0.0 |
 | `app/data/emergency_keywords.json` | 24 个急症关键词与固定返回模板 | v1.0.0 |
 | `app/data/index/embeddings.json` | RAG 嵌入索引（动作库 + 知识卡片，embedding-3 / 1024 维），由 `scripts/build_index.py` 生成 | 派生资产 |
-| `app/data/pregenerated/*.json` | 5 份预生成的画像与处方，供前端秒开演示 | glm-5.3 |
 
 动作库与知识卡片是**第一版通识内容，待首都体育学院专家审核替换**。替换时保留 ID，否则已生成的处方引用会失效。每份画像与处方都会带上所用资产的版本号。
 
@@ -227,31 +224,34 @@ cd backend && uv run python scripts/build_index.py
 
 ### 生成结果的保存与再次加载
 
-每次通过接口实时生成，结果都会自动落盘，三个目录分工：
+所有生成结果只落两个留档目录 + 一份熔断记录，同一学号重复生成直接覆盖，均以 `{学号}.json` 命名：
 
-| 目录 | 内容 |
+| 位置 | 内容 |
 |---|---|
-| `app/data/generated/{学号}.json` | 每个学生最近一次生成的完整快照（画像 + 处方），供「★ 载入已有结果」读取 |
-| `app/data/profiles/` | 每次画像生成各留一份档（学号_时刻_随机后缀） |
-| `app/data/prescriptions/` | 每次处方生成各留一份档（同上） |
+| `app/data/profiles/{学号}.json` | 最近一次生成的体质画像 |
+| `app/data/prescriptions/{学号}.json` | 最近一次生成的运动处方 |
+| `app/data/emergency_records.json` | 学号 → 最近一次急症熔断记录（就医提示） |
 
-快照合并按安全优先：急症熔断会整份重置；新画像判定不宜开处方时保留画像、清掉旧处方；
-只重新生成画像时保留上一次的处方。`/api/v1/pregenerated` 系列接口返回
-线上快照与脚本预生成中 `generated_at` 较新的一份。这三个目录都已 gitignore。
+线上实时生成与脚本预生成共用这套留档。急症熔断时**不清除**已有的画像与处方文件，
+只把熔断记录写入 `emergency_records.json`；此后前端选中该学生自动展示的就只有
+就医提示（不返回旧画像与处方，避免误用），该学生也会带 ★ 出现在列表中。
+画像或处方重新生成成功时自动解除熔断，恢复正常留档展示。
+`/api/v1/pregenerated` 系列接口从上述位置拼装返回。
+两个留档目录与熔断记录文件均已 gitignore。
 
 ### 预生成结果
 
-`app/data/pregenerated/` 下每个学生一个文件，含完整画像与处方、生成耗时、所用模型与思考开关。
-重新生成：
+`scripts/pregenerate.py` 调真实模型为学生生成画像与处方，成功后由服务层覆盖留档到
+`app/data/profiles/` 与 `app/data/prescriptions/`（与线上实时生成共用同一路径）：
 
 ```bash
 cd backend && uv run python -u scripts/pregenerate.py
 ```
 
 默认生成 5 份（李沐阳、陈若溪、王子轩、黄俊豪、刘星月），覆盖不同学段、性别、体能水平与约束类型。
-`--all` 生成全部 20 份，也可指定学号。**串行执行**：并发会触发上游限流，单次调用会从 1 分钟拖到十几分钟。
+`--all` 生成全部档案，也可指定学号。**串行执行**：并发会触发上游限流，单次调用会从 1 分钟拖到十几分钟。
 
-模型或 prompt 改动后这些结果即过期，需重跑；文件里记录了 `model` 与 `generated_at` 便于判断。
+模型或 prompt 改动后这些结果即过期，需重跑；留档里记录了 `generated_at` 便于判断。
 
 ### mock 档案覆盖面
 

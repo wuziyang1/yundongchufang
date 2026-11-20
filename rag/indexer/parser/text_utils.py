@@ -17,9 +17,13 @@ _DECIMAL_DOT_RE = re.compile(r"(?<=\d)\s*．\s*(?=\d)")
 # PDF 抽取常在汉字之间留下空格，如「等 级」「了 解」
 _HAN_GAP_RE = re.compile(r"(?<=[一-鿿])[ \t　]+(?=[一-鿿])")
 _SPACES_RE = re.compile(r"[ \t　]+")
+# 西文连字（ﬁ、ﬂ 等）拆回普通字母，检索词「fitness」才能命中；控制字符多是缺字形的符号，去掉
+_LIGATURES = {0xFB00: "ff", 0xFB01: "fi", 0xFB02: "fl", 0xFB03: "ffi", 0xFB04: "ffl"}
+_CONTROL_CHARS = {code: None for code in [*range(0x00, 0x09), *range(0x0B, 0x20), 0x7F]}
 
 
 def clean_text(text: str) -> str:
+    text = text.translate(_LIGATURES).translate(_CONTROL_CHARS)
     text = text.translate(_FULLWIDTH_ALNUM)
     text = _DECIMAL_DOT_RE.sub(".", text)
     text = _HAN_GAP_RE.sub("", text)
