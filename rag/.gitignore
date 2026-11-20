@@ -1,0 +1,15 @@
+# Milvus 数据卷（向量库的二进制数据，可由知识库 PDF 重新生成）
+milvus/volumes/
+
+# 知识库原文（体积大，且含出版物版权内容），只保留目录占位
+knowledge/*
+!knowledge/.gitkeep
+
+# OCR 缓存与解析文本预览（可重新生成）
+cache/
+
+.venv/
+.env
+__pycache__/
+*.pyc
+.DS_Store

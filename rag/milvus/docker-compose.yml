@@ -1,0 +1,36 @@
+# Milvus standalone，单容器部署：内嵌 etcd + 本地文件存储，不依赖 MinIO，也不需要独立的 etcd 容器。
+# 镜像直接从 Docker Hub 拉取（milvusdb/milvus），没有镜像站前缀。
+#
+# 启停请用 rag/scripts/milvus_up.sh 与 milvus_down.sh，它们会带上 rag/.env 里的端口等配置。
+
+name: yundongchufang-rag
+
+services:
+  milvus:
+    container_name: yundongchufang-milvus
+    image: milvusdb/milvus:v2.5.16
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      TZ: Asia/Shanghai
+      DEPLOY_MODE: STANDALONE
+      # 元数据：使用 Milvus 进程内嵌的 etcd，数据落在同一个数据卷里
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      ETCD_CONFIG_PATH: /milvus/configs/embedEtcd.yaml
+      # 向量与索引文件：直接写本地磁盘，取代 MinIO 对象存储
+      COMMON_STORAGETYPE: local
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+      - ./embedEtcd.yaml:/milvus/configs/embedEtcd.yaml:ro
+    ports:
+      - "${MILVUS_PORT:-19530}:19530"
+      - "${MILVUS_MGMT_PORT:-9091}:9091"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
