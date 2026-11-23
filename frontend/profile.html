@@ -6,8 +6,8 @@
 <title>健康档案理解报告</title>
 <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js"></script>
-<link rel="stylesheet" href="/static/report.css?v=20261112" />
-<link rel="stylesheet" href="/static/profile.css?v=20261112" />
+<link rel="stylesheet" href="/static/report.css?v=20261123e" />
+<link rel="stylesheet" href="/static/profile.css?v=20261123" />
 </head>
 <body>
 <div id="profile">
@@ -39,7 +39,7 @@
   <div class="gen-bar" v-if="generating">
     <div class="gen-track"><i></i></div>
     <span class="gen-text">{{ stage }}</span>
-    <span class="gen-hint">模型逐字生成中，约需一两分钟，请勿关闭页面</span>
+    <span class="gen-hint">先按国标评分表查表，再由模型撰写解读，约需一两分钟，请勿关闭页面</span>
   </div>
 
   <div class="gen-alert" v-if="error">{{ error }}</div>
@@ -133,6 +133,7 @@
         <div class="head-meta">
           <div class="hm-row"><span>生成日期</span><b>{{ dateOnly(profile.generated_at) || '—' }}</b></div>
           <div class="hm-row"><span>模型版本</span><b>{{ profile.versions.model || '—' }}</b></div>
+          <div class="hm-row"><span>知识库版本</span><b>{{ graded ? profile.knowledge_base.fingerprint : '—' }}</b></div>
         </div>
       </header>
 
@@ -148,7 +149,10 @@
             <div class="f"><label>身&nbsp;&nbsp;&nbsp;&nbsp;高</label><u>{{ basic.height_cm ?? '—' }}</u><span class="unit">cm</span></div>
             <div class="f"><label>体&nbsp;&nbsp;&nbsp;&nbsp;重</label><u>{{ basic.weight_kg ?? '—' }}</u><span class="unit">kg</span></div>
             <div class="f"><label>BMI</label><u>{{ basic.bmi ?? '—' }}</u></div>
-            <div class="f"><label>BMI 评价</label><u>{{ basic.bmi_evaluation || '—' }}</u></div>
+            <div class="f"><label>BMI 评价</label><u>{{ basic.bmi_evaluation || '—' }}</u>
+              <button type="button" class="lv-badge" :class="levelMeta(bmiFact.level).cls" v-if="bmiFact"
+                      @click="openRef(bmiFact.id)">{{ bmiFact.score }} 分</button>
+            </div>
           </div>
         </div>
       </section>
@@ -161,13 +165,17 @@
             <div class="dim-card" v-for="d in dims" :key="d.dimension">
               <div class="dim-head">
                 <strong>{{ d.dimension }}</strong>
-                <span class="lv-badge" :class="levelMeta(d.level).cls">{{ d.level || '—' }}</span>
+                <span class="lv-badge static" :class="levelMeta(d.level).cls">{{ dimBadge(d) }}</span>
               </div>
-              <div class="dim-bar"><i :class="levelMeta(d.level).cls" :style="{ width: levelMeta(d.level).width }"></i></div>
-              <div class="dim-ind" v-if="d.indicators.length">
+              <div class="dim-bar"><i :class="levelMeta(d.level).cls" :style="{ width: dimWidth(d) }"></i></div>
+              <div class="dim-ind" v-if="d.indicators.length || (d.missing || []).length">
                 <span v-for="i in d.indicators" :key="i.name">
-                  {{ i.name }} <b>{{ i.raw || '—' }}</b><em v-if="i.level">（{{ i.level }}）</em>
+                  {{ i.name }} <b>{{ rawText(i) }}</b>
+                  <button type="button" class="lv-badge" :class="levelMeta(i.level).cls" v-if="i.ref"
+                          @click="openRef(i.ref)">{{ i.score }} 分 · {{ i.level }}</button>
+                  <em v-else-if="i.level">（{{ i.level }}）</em>
                 </span>
+                <span class="dim-miss" v-for="m in d.missing || []" :key="m">缺 {{ m }}</span>
               </div>
               <p class="dim-basis" v-if="d.basis">{{ d.basis }}</p>
             </div>
@@ -179,7 +187,9 @@
       <!-- 3 综合评价 -->
       <section class="sec">
         <div class="sec-head blue"><i>3</i><h3>综合评价</h3>
-          <span class="sec-note" v-if="overall.level">综合等级：{{ overall.level }}</span>
+          <button type="button" class="sec-note" v-if="overallNote && overall.score_basis"
+                  @click="openRef('TOTAL')">{{ overallNote }}</button>
+          <span class="sec-note" v-else-if="overallNote">{{ overallNote }}</span>
         </div>
         <div class="sec-body boxed">
           <p class="lead">{{ overall.summary || '—' }}</p>
@@ -223,6 +233,22 @@
       </div>
     </div>
   </div>
+  <!-- 依据卡片：点击得分徽标或综合等级弹出（国标查表依据、学年总分的算式） -->
+  <div class="ev-mask" v-if="refCard" @click="closeRef">
+    <div class="ev-pop" @click.stop>
+      <div class="ev-head">
+        <span class="ref-id fact">{{ refCard.id }}</span>
+        <div class="ev-headtxt">
+          <strong>{{ refCard.title }}</strong>
+          <span class="ev-sub">{{ refCard.sub }}</span>
+        </div>
+        <span v-if="refCard.level" class="lv-badge static" :class="levelMeta(refCard.level).cls">{{ refCard.badge }}</span>
+        <button class="mp-close" type="button" @click="closeRef" aria-label="关闭">×</button>
+      </div>
+      <div class="ev-body">{{ refCard.text }}</div>
+    </div>
+  </div>
+
   <!-- 右侧 AI 输出抽屉：生成时展示模型实时输出 -->
   <div class="ai-drawer" :class="{ open: aiOpen }">
     <div class="ai-head">
@@ -250,6 +276,6 @@
 
 <script src="/static/sse.js?v=20261118"></script>
 <script src="/static/ai-panel.js?v=20261118"></script>
-<script src="/static/profile.js?v=20261118c"></script>
+<script src="/static/profile.js?v=20261123"></script>
 </body>
 </html>

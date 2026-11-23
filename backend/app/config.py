@@ -91,7 +91,7 @@ class Settings:
     thinking_enabled: bool = os.getenv("LLM_THINKING", "false").strip().lower() == "true"
 
     # prompt 版本号，随每份画像与处方一并返回；知识库版本用入库文档的内容指纹表示，随处方留档
-    prompt_version: str = "v3.0.0"
+    prompt_version: str = "v3.1.0"
 
     @property
     def milvus_uri(self) -> str:

@@ -19,74 +19,45 @@ def _is_prescription_task(system: str) -> bool:
 def build_mock_payload(system: str, user: str) -> dict[str, Any]:
     if _is_prescription_task(system):
         return _mock_prescription(user)
-    return _mock_profile()
+    return _mock_profile(user)
 
 
-def _mock_profile() -> dict[str, Any]:
+# 画像 prompt 里「体质六维」的写法（见 app/prompts/profile.py）：「- 心肺耐力：及格（71.6 分）— …」
+_DIMENSION_LINE_RE = re.compile(r"^- (.+?)：(.+?)(?:（|$)")
+_DIMENSIONS = ("身体形态", "心肺耐力", "肌肉力量与耐力", "速度与灵敏", "爆发力", "柔韧性")
+# 占位短板只从查表等级偏低的维度里挑，否则会被画像服务的校验打回
+_MOCK_WEAK_LEVELS = ("不及格", "肥胖", "及格", "超重", "低体重")
+
+
+def _mock_profile(user: str) -> dict[str, Any]:
+    """占位画像：只有解读文字。等级、得分、总分由画像服务按国标查表填写，不在这里。"""
+    levels: dict[str, str] = {}
+    for line in user.splitlines():
+        match = _DIMENSION_LINE_RE.match(line)
+        if match and match.group(1) in _DIMENSIONS:
+            levels[match.group(1)] = match.group(2)
+    weak = sorted(
+        (name for name, level in levels.items() if level in _MOCK_WEAK_LEVELS),
+        key=lambda name: _MOCK_WEAK_LEVELS.index(levels[name]),
+    )[:3]
     return {
-        "basic": {
-            "grade": "初二",
-            "age": 14,
-            "gender": "男",
-            "height_cm": 168.5,
-            "weight_kg": 72.3,
-            "bmi": 25.5,
-            "bmi_evaluation": f"{_MOCK} 肥胖",
-        },
-        "fitness_dimensions": [
-            {
-                "dimension": "身体形态",
-                "indicators": [{"name": "BMI", "raw": "25.5", "level": "较差"}],
-                "level": "较差",
-                "basis": f"{_MOCK} 离线占位",
-            },
-            {
-                "dimension": "心肺耐力",
-                "indicators": [{"name": "1000米", "raw": "4分32秒", "level": "及格"}],
-                "level": "及格",
-                "basis": f"{_MOCK} 离线占位",
-            },
-            {
-                "dimension": "肌肉力量与耐力",
-                "indicators": [{"name": "引体向上", "raw": "3", "level": "及格"}],
-                "level": "及格",
-                "basis": f"{_MOCK} 离线占位",
-            },
-            {
-                "dimension": "速度与灵敏",
-                "indicators": [{"name": "50米", "raw": "8.9", "level": "及格"}],
-                "level": "及格",
-                "basis": f"{_MOCK} 离线占位",
-            },
-            {
-                "dimension": "爆发力",
-                "indicators": [{"name": "立定跳远", "raw": "185", "level": "及格"}],
-                "level": "及格",
-                "basis": f"{_MOCK} 离线占位",
-            },
-            {
-                "dimension": "柔韧性",
-                "indicators": [{"name": "坐位体前屈", "raw": "4.2", "level": "较差"}],
-                "level": "较差",
-                "basis": f"{_MOCK} 离线占位",
-            },
+        "dimension_notes": [
+            {"dimension": name, "basis": f"{_MOCK} 离线占位解读，请配置真实模型后重新生成"} for name in _DIMENSIONS
         ],
         "overall": {
-            "level": "中等偏下",
             "summary": f"{_MOCK} 这是离线占位画像，请配置真实模型后重新生成",
-            "strengths": [f"{_MOCK} 身高发育良好"],
+            "strengths": [f"{_MOCK} 占位优势"],
             "weaknesses": [
-                {"rank": 1, "dimension": "身体形态", "reason": f"{_MOCK} BMI 属肥胖，优先改善"},
-                {"rank": 2, "dimension": "柔韧性", "reason": f"{_MOCK} 低于及格线"},
-                {"rank": 3, "dimension": "心肺耐力", "reason": f"{_MOCK} 提升空间最大"},
+                {"rank": rank, "dimension": name, "reason": f"{_MOCK} 查表等级「{levels[name]}」，占位说明"}
+                for rank, name in enumerate(weak, 1)
             ],
         },
         "health_focus": [
             {
-                "item": f"{_MOCK} 哮喘",
-                "type": "慢性病",
-                "impact": "冷空气高强度有氧可能诱发",
-                "attention": "延长热身，低温转室内",
+                "item": f"{_MOCK} 占位关注点",
+                "type": "近期症状",
+                "impact": "离线占位",
+                "attention": "配置真实模型后重新生成",
             }
         ],
     }

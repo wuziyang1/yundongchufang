@@ -292,20 +292,7 @@ def _knowledge_fields(payload: dict[str, Any], context: KnowledgeContext) -> dic
                 cited_by[token].append(where)
 
     return {
-        "assessment": [
-            {
-                "id": fact.id,
-                "key": fact.item.key,
-                "name": fact.item.name,
-                "raw": fact.item.raw,
-                "unit": fact.item.unit,
-                "score": fact.item.score,
-                "level": fact.item.level,
-                "basis": fact.item.basis,
-                "source": fact.item.source,
-            }
-            for fact in context.facts
-        ],
+        "assessment": [fact.to_dict() for fact in context.facts],
         "evidence": [
             {
                 "id": entry.id,

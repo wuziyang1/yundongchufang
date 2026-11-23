@@ -109,14 +109,15 @@ def _assessment_block(context: KnowledgeContext) -> str:
         item = fact.item
         lines.append(f"[{fact.id}] {item.name}：{item.raw} → {item.score} 分「{item.level}」。{item.basis}出处：{item.source}")
     weak = assessment.weak_items
+    line = f"良好线 {assessment.good_line} 分" if assessment.good_line is not None else "良好线"
     if weak:
         lines.append(
-            "体测短板（低于良好线 80 分，由低到高）："
+            f"体测短板（低于{line}，由低到高）："
             + "、".join(f"{item.name} {item.score} 分" for item in weak)
             + "。"
         )
     else:
-        lines.append("体测短板：各项均在良好线（80 分）以上，没有明显短板。")
+        lines.append(f"体测短板：各项均不低于{line}，没有明显短板。")
     if assessment.skipped:
         lines.append("未评分：" + "；".join(assessment.skipped) + "。")
     return "\n".join(lines)

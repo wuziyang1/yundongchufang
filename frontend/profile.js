@@ -12,6 +12,10 @@ const EMPTY_PROFILE = {
   fitness_dimensions: [],
   overall: { level: '', summary: '', strengths: [], weaknesses: [] },
   health_focus: [],
+  // 国标查表结果（S 条目）与所用知识库；知识库接入画像之前生成的留档没有这些
+  assessment: [],
+  assessment_notes: [],
+  knowledge_base: { available: false, fingerprint: '' },
   disclaimer: '',
 };
 
@@ -51,6 +55,7 @@ createApp({
       form: clone(DEFAULT_FORM),
       formSaving: false,
       formError: '',
+      refPop: null,
     };
   },
 
@@ -69,6 +74,54 @@ createApp({
     dims() { return this.profile.fitness_dimensions || []; },
     overall() { return this.profile.overall || { strengths: [], weaknesses: [] }; },
     focus() { return this.profile.health_focus || []; },
+
+    /* 这份画像的等级是不是按知识库里的国标评分表查表得到的 */
+    graded() {
+      return !!(this.profile.knowledge_base && this.profile.knowledge_base.available);
+    },
+    /* 国标评分条目按编号索引（S1、S2…） */
+    factMap() {
+      const map = {};
+      (this.profile.assessment || []).forEach((a) => { map[a.id] = a; });
+      return map;
+    },
+    bmiFact() {
+      return this.factMap[this.basic.bmi_ref] || null;
+    },
+    /* 综合等级一行：有学年总分时带上分数 */
+    overallNote() {
+      const o = this.overall;
+      if (!o.level) return '';
+      return o.score != null ? `综合等级：${o.level} · 学年总分 ${o.score}` : `综合等级：${o.level}`;
+    },
+    /* 依据卡片内容：单项评分（S 条目）或学年总分的算式 */
+    refCard() {
+      const id = this.refPop;
+      if (!id) return null;
+      if (id === 'TOTAL') {
+        const o = this.overall;
+        return {
+          id: '总分',
+          title: o.score != null
+            ? `学年总分 ${o.score}（标准分 ${o.standard_score} + 附加分 ${o.bonus || 0}）`
+            : '学年总分：未计算',
+          sub: o.score_source || '',
+          level: o.level,
+          badge: o.level,
+          text: [o.score_basis, ...(this.profile.assessment_notes || [])].filter(Boolean).join('\n'),
+        };
+      }
+      const a = this.factMap[id];
+      if (!a) return null;
+      return {
+        id: a.id,
+        title: `${a.name}：${this.rawText(a)}`,
+        sub: a.source || '',
+        level: a.level,
+        badge: `${a.score} 分 · ${a.level}`,
+        text: a.basis || '',
+      };
+    },
   },
 
   watch: {
@@ -79,6 +132,11 @@ createApp({
   },
 
   mounted() {
+    // Esc 关闭依据卡片
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.refPop) this.closeRef();
+    });
+
     const studentsReady = fetch('/api/v1/students')
       .then((r) => r.json())
       .then((list) => { this.students = list; })
@@ -125,8 +183,7 @@ createApp({
 
         if (data.emergency) this.emergency = data.emergency;
         if (data.profile) {
-          this.profile = data.profile;
-          document.title = `${data.profile.name || ''}健康档案理解报告`;
+          this.applyProfile(data.profile);
         } else if (!data.emergency) {
           this.error = '该学生的已有结果不含画像内容，点「生成档案理解报告」即可实时生成';
         }
@@ -139,7 +196,14 @@ createApp({
 
     /* ---------- 实时生成（SSE） ---------- */
 
+    /* 旧版留档没有查表字段：用空骨架补齐，模板不必逐处判空 */
+    applyProfile(profile) {
+      this.profile = { ...clone(EMPTY_PROFILE), ...profile };
+      document.title = `${profile.name || ''}健康档案理解报告`;
+    },
+
     resetState() {
+      this.refPop = null;
       this.profile = clone(EMPTY_PROFILE);
       this.record = null;
       this.error = '';
@@ -282,7 +346,7 @@ createApp({
           this.pushAiNote(payload.message + '…');
           break;
         case 'thinking':
-          this.stage = '模型正在分析体质画像…';
+          this.stage = '模型正在依据查表结果撰写画像…';
           this.appendThink(AI_TITLE, payload.text);
           break;
         case 'token':
@@ -294,8 +358,7 @@ createApp({
           this.pushAiNote('输出未通过校验，正在重新生成…');
           break;
         case 'result':
-          this.profile = payload;
-          document.title = `${payload.name || ''}健康档案理解报告`;
+          this.applyProfile(payload);
           this.pushAiNote('体质画像生成完成。');
           break;
         case 'emergency':
@@ -311,16 +374,40 @@ createApp({
 
     /* ---------- 渲染辅助 ---------- */
 
-    /* 等级 → 徽标类名 + 进度条宽度 */
+    /* 等级 → 徽标类名 + 进度条宽度。等级词来自国标：单项与综合是 优秀/良好/及格/不及格，
+       体重指数是 正常/低体重/超重/肥胖；旧版留档里还有「较差」等说法 */
     levelMeta(level) {
       const s = level || '';
-      if (s.includes('数据不足')) return { cls: 'lv-na bar-na', width: '18%' };
-      if (s.includes('优')) return { cls: 'lv-exc bar-exc', width: '95%' };
+      if (s.includes('数据不足') || s.includes('不测')) return { cls: 'lv-na bar-na', width: '18%' };
+      if (s.includes('优') || s === '正常') return { cls: 'lv-exc bar-exc', width: '95%' };
       if (s.includes('良')) return { cls: 'lv-good bar-good', width: '78%' };
-      if (s.includes('不及格') || s.includes('差') || s.includes('弱')) return { cls: 'lv-fail bar-fail', width: '35%' };
+      if (s.includes('不及格') || s.includes('差') || s.includes('弱') || s === '肥胖') return { cls: 'lv-fail bar-fail', width: '35%' };
       if (s) return { cls: 'lv-pass bar-pass', width: '60%' };
       return { cls: '', width: '0%' };
     },
+    /* 维度进度条：有得分按得分画，旧版留档按等级估 */
+    dimWidth(d) {
+      if (d.score != null) return `${Math.max(4, Math.min(100, d.score))}%`;
+      return this.levelMeta(d.level).width;
+    },
+    /* 维度徽标：一个项目时项目徽标已带得分，这里只写等级；多个项目加权平均时带上维度得分 */
+    dimBadge(d) {
+      if (!d.level) return '—';
+      return d.score != null && (d.indicators || []).length > 1 ? `${d.level} · ${d.score} 分` : d.level;
+    },
+    /* 成绩原值：纯数字时带上单位 */
+    rawText(i) {
+      const raw = String(i.raw ?? '').trim();
+      if (!raw) return '—';
+      return i.unit && /^-?[\d.]+$/.test(raw) ? `${raw} ${i.unit}` : raw;
+    },
+
+    /* ---------- 依据卡片 ---------- */
+
+    openRef(id) {
+      if (id === 'TOTAL' ? this.overall.score_basis : this.factMap[id]) this.refPop = id;
+    },
+    closeRef() { this.refPop = null; },
 
     parseDate(s) {
       if (!s) return null;

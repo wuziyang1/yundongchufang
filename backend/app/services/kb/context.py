@@ -42,6 +42,21 @@ class Fact:
     id: str  # S1、S2…
     item: standards.ItemScore
 
+    def to_dict(self) -> dict[str, Any]:
+        """随结果留档的评定条目（schemas.common.AssessmentItem）。附加分的说明接在查表依据后面。"""
+        item = self.item
+        return {
+            "id": self.id,
+            "key": item.key,
+            "name": item.name,
+            "raw": item.raw,
+            "unit": item.unit,
+            "score": item.score,
+            "level": item.level,
+            "basis": item.basis + (f"附加分：{item.bonus_basis}。" if item.bonus else ""),
+            "source": item.source,
+        }
+
 
 @dataclass
 class Evidence:

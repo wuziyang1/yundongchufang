@@ -61,6 +61,7 @@ def check(student_id: str, *, show_prompt: bool) -> None:
         print(f"  未评分：{reason}")
     weak = context.assessment.weak_items
     print("  短板：" + ("、".join(f"{item.name} {item.score} 分" for item in weak) or "无"))
+    print(f"  学年总分：{context.assessment.total_basis}")
 
     print(f"\n— 检索主题（把关：{_threshold_note(context.retrieval_mode)}）—")
     for topic in context.topics:

@@ -19,6 +19,7 @@ from app.prompts import prescription as rx_prompt  # noqa: E402
 from app.prompts import profile as pf_prompt  # noqa: E402
 from app.schemas.record import HealthRecord  # noqa: E402
 from app.services.data_loader import find_student  # noqa: E402
+from app.services import profile_grading  # noqa: E402
 from app.services.kb import context as kb_context  # noqa: E402
 from app.services.prescription_service import parse_age  # noqa: E402
 
@@ -32,9 +33,11 @@ MATRIX = [
 
 
 async def build_profile_prompt() -> tuple[str, str]:
+    """画像 prompt 由原始档案与国标查表结果构造，与线上链路一致（需要 Milvus 已启动）。"""
     record = HealthRecord.model_validate(find_student(STUDENT_ID))
     record_view = record.to_prompt_dict()
-    return pf_prompt.SYSTEM, pf_prompt.build_user_prompt(record_view)
+    grading = await profile_grading.load(record_view)
+    return pf_prompt.SYSTEM, pf_prompt.build_user_prompt(record_view, grading)
 
 
 async def build_prescription_prompt() -> tuple[str, str]:

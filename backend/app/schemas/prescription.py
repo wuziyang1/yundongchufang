@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.common import Versions
+from app.schemas.common import AssessmentItem, KnowledgeBaseInfo, KnowledgeDocument, KnowledgeTopic, Versions
+
+__all__ = ["PrescriptionResult", "AssessmentItem", "KnowledgeBaseInfo", "KnowledgeDocument", "KnowledgeTopic"]
 
 
 class FittItem(BaseModel):
@@ -141,22 +143,6 @@ class Restriction(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
 
 
-class AssessmentItem(BaseModel):
-    """体质评定条目（S 条目）：一项体测成绩按国标评分表查表的结果。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    id: str = ""
-    key: str = ""  # 档案字段名，BMI 为 "BMI"
-    name: str = ""
-    raw: str = ""
-    unit: str = ""
-    score: int = 0
-    level: str = ""
-    basis: str = ""
-    source: str = ""
-
-
 class EvidenceItem(BaseModel):
     """权威资料摘录条目（E 条目）：本次检索到并交给模型的一段知识库原文。"""
 
@@ -181,39 +167,6 @@ class KnowledgeGap(BaseModel):
 
     topic: str = ""
     note: str = ""
-
-
-class KnowledgeDocument(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    title: str = ""
-    kind: str = ""
-    md5: str = ""
-
-
-class KnowledgeTopic(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    label: str = ""
-    covered: bool = False
-    evidence_ids: list[str] = Field(default_factory=list)
-    top_score: float | None = None
-
-
-class KnowledgeBaseInfo(BaseModel):
-    """生成这份处方时知识库的状态：哪一版资料、怎么检索的、各主题查到了什么。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    available: bool = False
-    fingerprint: str = ""
-    collection: str = ""
-    embedding_model: str = ""
-    retrieval_mode: str = ""  # rerank（重排把关）/ dense（降级为向量相似度把关）
-    stage: str = ""
-    documents: list[KnowledgeDocument] = Field(default_factory=list)
-    topics: list[KnowledgeTopic] = Field(default_factory=list)
-    candidate_exercises: int = 0
 
 
 class PrescriptionResult(BaseModel):

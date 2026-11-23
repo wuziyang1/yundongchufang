@@ -31,11 +31,24 @@
   display: flex; flex-wrap: wrap; gap: 4px 16px;
   font-size: var(--fs-sm); color: var(--ink-2);
 }
+.dim-ind > span { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .dim-ind b { color: var(--ink); font-weight: 600; }
 .dim-ind em { font-style: normal; color: var(--ink-3); }
+/* 单项得分徽标：点击弹出国标查表依据 */
+.dim-ind .lv-badge { margin-left: 1px; }
+.dim-ind .dim-miss { color: var(--ink-3); }
+.info-grid .f .lv-badge { align-self: center; margin-left: 0; }
 .dim-basis { margin: 7px 0 0; font-size: var(--fs-sm); color: var(--ink-3); line-height: 1.6; }
 
 /* ---------- 3 综合评价 ---------- */
+/* 标题栏里的综合等级与学年总分：点击弹出总分的算式 */
+.sec-head button.sec-note {
+  border: 0; background: none; padding: 0; color: inherit; cursor: pointer;
+  font-family: inherit; text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.sec-head button.sec-note:hover { opacity: 1; }
+/* 依据卡片正文：总分算式与评定说明分行显示 */
+.ev-body { white-space: pre-line; }
 .sec-body > .lead { margin: 0 0 10px; font-size: var(--fs-body); }
 .ov-block {
   margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line);

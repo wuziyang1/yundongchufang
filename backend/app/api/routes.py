@@ -191,7 +191,7 @@ def get_saved_result(student_id: str) -> dict[str, Any]:
 
 @router.post("/profile:analyze")
 async def analyze_profile(body: ProfileRequest) -> dict[str, Any]:
-    """健康档案理解：归一化 + 体质画像 + 安全评估。"""
+    """健康档案理解：国标查表 + 体质画像。"""
     record_dict = body.record.model_dump()
 
     emergency = check_emergency(record_dict)
@@ -221,12 +221,12 @@ async def analyze_profile_stream(body: ProfileRequest) -> StreamingResponse:
     """健康档案理解，以 SSE 流式返回模型输出过程。
 
     事件类型：
-      status     进度说明
+      status     进度说明（开始生成、国标查表结果）
       token      模型原始输出片段（phase=profile）
       retry      触发了一次重生成
       emergency  急症熔断
       result     最终画像 JSON
-      error      生成失败
+      error      生成失败（含知识库不可用）
       done       流结束
     """
 
@@ -245,7 +245,9 @@ async def analyze_profile_stream(body: ProfileRequest) -> StreamingResponse:
         yield _sse("status", {"message": "正在生成体质画像", "phase": "profile"})
         try:
             async for kind, payload in profile_service.stream_profile(body.record):
-                if kind == "thinking":
+                if kind == "status":
+                    yield _sse("status", {"message": payload, "phase": "profile"})
+                elif kind == "thinking":
                     yield _sse("thinking", {"text": payload, "phase": "profile"})
                 elif kind == "token":
                     yield _sse("token", {"text": payload, "phase": "profile"})
