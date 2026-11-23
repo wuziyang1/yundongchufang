@@ -445,6 +445,32 @@ button.pill:hover { filter: brightness(.96); }
   font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5;
 }
 
+/* 权威资料摘录卡片：点击处方里的依据角标（E 条目）居中弹出原文 */
+.ev-mask {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(26, 34, 50, .45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 28px 20px;
+}
+.ev-pop {
+  width: 640px; max-width: 100%;
+  max-height: min(78vh, 660px);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(26, 34, 50, .32);
+  padding: 16px 18px;
+}
+.ev-head { display: flex; align-items: flex-start; gap: 10px; }
+.ev-headtxt { flex: 1; min-width: 0; }
+.ev-headtxt strong { display: block; font-size: var(--fs-body); line-height: 1.5; }
+.ev-sub { display: block; margin-top: 3px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.6; overflow-wrap: anywhere; }
+.ev-tags { margin: 10px 0 0; }
+.ev-body {
+  margin-top: 10px; overflow-y: auto; padding-right: 6px;
+  font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- 5 注意事项 ----------
    四组提示的条数由数据决定、长短悬殊，用多栏流式排版：
    内容像报纸一样依次填满各栏，单条提示不跨栏断开，
@@ -491,7 +517,7 @@ button.pill:hover { filter: brightness(.96); }
 
 /* ---------- 依据引用角标 ----------
    处方里每个带专业判断的条目后面跟着它所依据的条目编号（S = 国标评分，E = 知识库摘录），
-   点击跳到「处方依据」里对应的条目。 */
+   点击就地弹出依据卡片查看详情与原文。 */
 .refs { margin: 5px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .refs.inline { display: inline-flex; margin: 0 0 0 4px; vertical-align: middle; }
 .refs > span { font-size: var(--fs-xs); color: var(--ink-3); margin-right: 2px; }
@@ -514,76 +540,19 @@ button.pill:hover { filter: brightness(.96); }
 .lv-badge.lv-b { background: var(--blue-soft); color: var(--blue); border-color: #c6d8f0; }
 .lv-badge.lv-c { background: var(--orange-soft); color: var(--orange); border-color: #f3d4ae; }
 .lv-badge.lv-d { background: var(--red-soft); color: var(--red); border-color: #f2c4c1; }
-.sub-title small, .kb-title small, .kb-gaps h4 small {
-  margin-left: 10px; font-size: var(--fs-xs); font-weight: 400; color: var(--ink-3);
-}
-
-/* ---------- 6 处方依据 ---------- */
-.kb-summary {
-  margin: 2px 0 12px; padding: 7px 12px;
-  border-left: 3px solid var(--purple); border-radius: 4px;
-  background: var(--purple-soft); color: var(--ink-2); font-size: var(--fs-md);
-}
-.kb-legacy {
-  margin: 2px 0; padding: 10px 14px; border-radius: 6px;
-  background: var(--orange-soft); color: var(--ink-2); font-size: var(--fs-md);
-  border: 1px solid #f3d4ae;
-}
-.kb-gaps {
-  margin-bottom: 14px; padding: 10px 14px; border-radius: 8px;
-  background: var(--orange-soft); border: 1px solid #f3d4ae;
-}
-.kb-gaps h4 { margin: 0 0 6px; font-size: var(--fs-body); color: var(--orange); }
-.kb-gaps h4 small { display: block; margin: 2px 0 0; line-height: 1.6; }
-.kb-gaps ul { margin: 0; padding-left: 20px; }
-.kb-gaps li { font-size: var(--fs-md); color: var(--ink-2); margin-top: 4px; }
-.kb-gaps li b { margin-right: 8px; color: var(--ink); }
-.kb-title { margin: 14px 0 8px; font-size: var(--fs-body); color: var(--purple); }
-.kb-toggle {
-  margin-top: 10px; padding: 4px 12px; cursor: pointer;
-  border: 1px dashed #cdbff0; border-radius: 6px; background: #fff;
-  color: var(--purple); font-size: var(--fs-sm); font-family: inherit;
-}
-.kb-toggle:hover { background: var(--purple-soft); }
-
-.ref-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
-.ref-card {
-  border: 1px solid var(--line); border-radius: 8px; background: #fff;
-  padding: 10px 13px; min-width: 0; transition: box-shadow .3s, border-color .3s;
-}
-.ref-card.fact { background: #fbfdff; border-color: #c6d8f0; }
-.ref-card.muted { background: #fafbfd; }
-.ref-card.flash { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(91, 63, 176, .22); }
-.ref-head { display: flex; align-items: flex-start; gap: 8px; }
-.ref-head strong { font-size: var(--fs-sm); line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+/* 依据卡片（弹层）里的编号徽标与标签行；S 国标评分用蓝色徽标 */
 .ref-id {
   flex: none; padding: 0 7px; height: 22px; line-height: 22px; border-radius: 4px;
   background: var(--purple); color: #fff; font-size: 13px; font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.ref-card.fact .ref-id { background: var(--blue); }
-.ref-card.muted .ref-id { background: #8b93a7; }
+.ref-id.fact { background: var(--blue); }
 .ref-tags { margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px; }
 .ref-tags em {
   font-style: normal; font-size: 13px; padding: 0 6px; border-radius: 3px;
   background: var(--blue-soft); color: var(--blue); line-height: 1.6;
 }
 .ref-tags em.topic { background: #eef0f4; color: var(--ink-3); }
-.ref-text {
-  margin: 6px 0 0; font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.65;
-  overflow-wrap: anywhere;
-}
-.ref-text.clamp {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
-  overflow: hidden; cursor: pointer;
-}
-.ref-card.open .ref-text.clamp { display: block; -webkit-line-clamp: unset; }
-.ref-src { margin: 4px 0 0; font-size: var(--fs-xs); color: var(--ink-3); }
-.ref-more {
-  margin-top: 3px; padding: 0; border: 0; background: none; cursor: pointer;
-  color: var(--purple); font-size: var(--fs-xs); font-family: inherit;
-}
-.ref-more:hover { text-decoration: underline; }
 
 .rpt-bottom {
   margin-top: 16px; display: flex; justify-content: space-between; gap: 14px;
@@ -606,7 +575,6 @@ button.pill:hover { filter: brightness(.96); }
 }
 
 @media screen and (max-width: 820px) {
-  .ref-list { grid-template-columns: 1fr; }
   .rpt-head { grid-template-columns: 1fr; gap: 10px; }
   .logo { display: none; }
   .head-meta { width: 100%; }

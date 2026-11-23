@@ -95,10 +95,9 @@ const EMPTY_RX = {
   },
   risk_notes: [],
   forbidden_or_limited: [],
-  // 依据链路：国标评分（S 条目）、知识库摘录（E 条目）、知识库未覆盖的问题、生成时的知识库状态
+  // 依据链路：国标评分（S 条目）、知识库摘录（E 条目）、生成时的知识库状态
   assessment: [],
   evidence: [],
-  knowledge_gaps: [],
   knowledge_base: { available: false, fingerprint: '', retrieval_mode: '', stage: '', documents: [], topics: [] },
   disclaimer: '',
 };
@@ -136,14 +135,12 @@ createApp({
       exerciseMap: {},
       dayFilter: '全周',
       pop: { show: false, pinned: false, up: false, x: 0, y: 0, pill: null },
+      refPop: null,
       showForm: false,
       form: clone(DEFAULT_FORM),
       formSaving: false,
       formError: '',
       generalTips: GENERAL_TIPS,
-      showUncited: false,
-      openRefs: {},
-      flashRef: '',
     };
   },
 
@@ -353,7 +350,7 @@ createApp({
       };
     },
 
-    /* ---------- 6 处方依据 ---------- */
+    /* ---------- 依据引用与卡片 ---------- */
 
     evidenceMap() {
       const map = {};
@@ -361,28 +358,35 @@ createApp({
       (this.rx.assessment || []).forEach((a) => { map[a.id] = a; });
       return map;
     },
-    citedEvidence() {
-      return (this.rx.evidence || []).filter((e) => (e.cited_by || []).length);
-    },
-    uncitedEvidence() {
-      return (this.rx.evidence || []).filter((e) => !(e.cited_by || []).length);
-    },
     /* 这份处方有没有依据链路：知识库改造之前生成的留档没有 */
     hasEvidenceChain() {
       return !!(this.rx.knowledge_base && this.rx.knowledge_base.available);
     },
-    kbSummary() {
-      const kb = this.rx.knowledge_base || {};
-      const docs = (kb.documents || []).length;
-      const topics = kb.topics || [];
-      const covered = topics.filter((t) => t.covered).length;
-      return [
-        `知识库版本 ${kb.fingerprint || '—'}（${docs} 份资料）`,
-        kb.stage && `按「${kb.stage}」学段检索`,
-        topics.length && `${topics.length} 个检索主题中 ${covered} 个有资料`,
-        `引用摘录 ${this.citedEvidence.length} 条`,
-        kb.retrieval_mode === 'dense' && '本次重排不可用，相关性由向量相似度把关',
-      ].filter(Boolean).join(' · ');
+    /* 依据卡片内容：把当前弹出的条目归一成卡片字段（S = 国标评分，E = 知识库摘录） */
+    refCard() {
+      const e = this.refPop;
+      if (!e) return null;
+      if (String(e.id).startsWith('S')) {
+        return {
+          id: e.id,
+          fact: true,
+          title: `${e.name}：${e.raw}${e.unit ? ` ${e.unit}` : ''}`,
+          sub: e.source || '',
+          score: e.score,
+          level: e.level,
+          text: e.basis || '',
+        };
+      }
+      return {
+        id: e.id,
+        fact: false,
+        title: e.doc_title || e.source || '',
+        sub: [e.section, e.pages && `第 ${e.pages} 页`].filter(Boolean).join(' · ') || e.source || '',
+        kind: e.doc_kind || '',
+        topics: e.topics || [],
+        citedBy: e.cited_by || [],
+        text: e.content || '',
+      };
     },
 
   },
@@ -402,13 +406,18 @@ createApp({
   },
 
   mounted() {
-    // 动作详情弹层：点击标签与弹层以外的区域关闭；滚动后 fixed 定位失效，直接收起
+    // 动作详情弹层：点击标签与弹层以外的区域关闭；滚动后 fixed 定位失效，直接收起。
+    // 依据卡片（.ev-pop）打开期间的点击与滚动不收起底下的动作弹层，关掉卡片后还能接着看
     document.addEventListener('click', (e) => {
       if (!this.pop.show || !this.pop.pinned) return;
-      if (e.target.closest('.move-pop') || e.target.closest('.sd-items .pill')) return;
+      if (e.target.closest('.move-pop, .ev-pop') || e.target.closest('.sd-items .pill')) return;
       this.closePop();
     });
-    window.addEventListener('scroll', () => { if (this.pop.show) this.closePop(); }, true);
+    window.addEventListener('scroll', () => { if (this.pop.show && !this.refPop) this.closePop(); }, true);
+    // Esc 关闭依据卡片
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.refPop) this.closeRef();
+    });
 
     // 学生列表与已有结果清单都到位后再定位默认学生，
     // 这样首个学生有已生成结果时能直接自动载入
@@ -490,8 +499,6 @@ createApp({
       // 动作详情只取这份处方自带的（后端从知识库动作条目回填），不再另拉动作库
       this.exerciseMap = {};
       (rx.exercise_details || []).forEach((e) => { this.exerciseMap[e.id] = e; });
-      this.showUncited = false;
-      this.openRefs = {};
       this.hasData = true;
       document.title = `${rx.name || ''}运动处方报告`;
     },
@@ -694,22 +701,12 @@ createApp({
       if (!e) return id;
       return e.source ? `${e.source}` : id;
     },
-    /* 点击引用角标：滚动到「处方依据」里对应的条目并闪一下 */
-    jumpRef(id) {
+    /* 点击依据角标：就地弹出对应条目的卡片（S = 国标评分，E = 知识库摘录） */
+    openRef(id) {
       const e = this.evidenceMap[id];
-      if (!e) return;
-      if (id.startsWith('E') && !(e.cited_by || []).length) this.showUncited = true;
-      this.openRefs[id] = true;
-      this.closePop();
-      this.$nextTick(() => {
-        const el = document.getElementById('ref-' + id);
-        if (!el) return;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        this.flashRef = id;
-        setTimeout(() => { if (this.flashRef === id) this.flashRef = ''; }, 1800);
-      });
+      if (e) this.refPop = e;
     },
-    toggleRef(id) { this.openRefs[id] = !this.openRefs[id]; },
+    closeRef() { this.refPop = null; },
     levelCls(level) {
       return {
         优秀: 'lv-a', 良好: 'lv-b', 及格: 'lv-c', 不及格: 'lv-d',
