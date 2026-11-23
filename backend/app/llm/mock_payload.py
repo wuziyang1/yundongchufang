@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 _MOCK = "[MOCK]"
@@ -17,7 +18,7 @@ def _is_prescription_task(system: str) -> bool:
 
 def build_mock_payload(system: str, user: str) -> dict[str, Any]:
     if _is_prescription_task(system):
-        return _mock_prescription()
+        return _mock_prescription(user)
     return _mock_profile()
 
 
@@ -91,86 +92,123 @@ def _mock_profile() -> dict[str, Any]:
     }
 
 
-def _mock_prescription() -> dict[str, Any]:
+# 处方 prompt 里知识库材料的写法（见 app/prompts/prescription.py）
+_EXERCISE_LINE_RE = re.compile(r"^\[([A-Z]{1,4}\d{3}[A-Z]?)\] ([^｜\n]+)")
+_CATEGORY_LINE_RE = re.compile(r"^(\S+)类：$")
+_TOPIC_LINE_RE = re.compile(r"^- (.+?)：((?:E\d+、?)+)$")
+
+
+def _parse_materials(user: str) -> tuple[dict[str, list[tuple[str, str]]], dict[str, list[str]]]:
+    """从处方 prompt 里读出可用动作（按素质类别）与各检索主题的摘录编号。"""
+    exercises: dict[str, list[tuple[str, str]]] = {}
+    topics: dict[str, list[str]] = {}
+    category = ""
+    for line in user.splitlines():
+        if match := _CATEGORY_LINE_RE.match(line):
+            category = match.group(1)
+        elif match := _EXERCISE_LINE_RE.match(line):
+            exercises.setdefault(category, []).append((match.group(1), match.group(2).strip()))
+        elif match := _TOPIC_LINE_RE.match(line):
+            topics[match.group(1)] = match.group(2).split("、")
+    return exercises, topics
+
+
+def _mock_prescription(user: str) -> dict[str, Any]:
+    """占位处方。prompt 里带有知识库材料时，动作编号与引用编号都取自材料，
+
+    这样 mock 模式下也能走通「校验编号 → 回填动作详情 → 生成依据链路」的完整流程；
+    没有知识库（纯离线）时只排常规活动，不带任何编号。
+    """
+    exercises, topics = _parse_materials(user)
+    used: dict[str, int] = {}
+
+    def pick(category: str, dosage: str) -> list[dict[str, Any]]:
+        pool = exercises.get(category) or []
+        if not pool:
+            return []
+        index = used.get(category, 0)
+        used[category] = index + 1
+        code, name = pool[index % len(pool)]
+        return [{"exercise_id": code, "name": name, "dosage": dosage, "notes": "", "evidence_ids": []}]
+
+    def cite(*labels: str) -> list[str]:
+        return [ids[0] for label in labels if (ids := topics.get(label))]
+
+    def activity(name: str, dosage: str, *labels: str) -> dict[str, Any]:
+        return {"exercise_id": "", "name": name, "dosage": dosage, "notes": "", "evidence_ids": cite(*labels)}
+
+    session = "单次锻炼的结构与各部分时长"
+    menu = "常见的有氧、抗阻运动项目"
+
+    def training_day(day: str, theme: str, main: list[dict[str, Any]], labels: tuple[str, ...]) -> dict[str, Any]:
+        return {
+            "day": day,
+            "theme": f"{_MOCK} {theme}",
+            "total_minutes": 45,
+            "is_training_day": True,
+            "rationale": f"{_MOCK} 占位示例：说明本日针对的短板与依据",
+            "evidence_ids": cite(*labels),
+            "blocks": [
+                {"phase": "热身", "minutes": 8,
+                 "items": [activity("慢跑", "3 分钟", session), *pick("柔韧", "每侧 20 秒 × 2")]},
+                {"phase": "主体", "minutes": 30, "items": main},
+                {"phase": "放松", "minutes": 7,
+                 "items": [*pick("柔韧", "每侧 30 秒 × 2"), activity("静态拉伸", "5 分钟", session)]},
+            ],
+        }
+
+    def rest_day(day: str, theme: str) -> dict[str, Any]:
+        return {"day": day, "theme": f"{_MOCK} {theme}", "total_minutes": 0, "is_training_day": False,
+                "rationale": f"{_MOCK} 训练间隔日，安排休息恢复", "evidence_ids": [], "blocks": []}
+
+    volume, intensity = "每日活动量与每周频率", "运动强度的评估与控制"
+    resistance = "抗阻训练的组数、次数与频率"
     return {
-        "goals": [f"{_MOCK} 健康体重管理", "心肺耐力提升", "体测专项提升:1000米"],
+        "goals": [f"{_MOCK} 健康体重管理", "心肺耐力提升", "体测专项提升:50米跑"],
         "fitt_vp": {
-            "frequency": {"value": "每周 4 次", "detail": f"{_MOCK} 有氧 3 次 + 抗阻 1 次"},
-            "intensity": {"value": "最大心率 60%-70%，RPE 4-6", "detail": f"{_MOCK} 谈话测试控制"},
-            "time": {"value": "单次 45 分钟", "detail": f"{_MOCK} 热身 8 + 主体 30 + 放松 7"},
-            "type": {"value": "低冲击有氧为主", "detail": f"{_MOCK} 有氧 60% / 抗阻 25% / 柔韧 15%"},
-            "volume": {"value": "每周 180 分钟", "detail": f"{_MOCK} 离线占位"},
-            "progression": {"value": "每 2 周递增", "detail": f"{_MOCK} 先加时长再加强度"},
+            "frequency": {"value": "每周 4 次", "detail": f"{_MOCK} 有氧 2 次 + 力量 2 次",
+                          "evidence_ids": cite(volume, resistance)},
+            "intensity": {"value": "最大心率 60%-70%", "detail": f"{_MOCK} 以谈话测试辅助控制",
+                          "evidence_ids": cite(intensity)},
+            "time": {"value": "单次 45 分钟", "detail": f"{_MOCK} 热身 8 + 主体 30 + 放松 7",
+                     "evidence_ids": cite(session)},
+            "type": {"value": "有氧为主，配合力量与柔韧", "detail": f"{_MOCK} 离线占位",
+                     "evidence_ids": cite("运动类型的搭配")},
+            "volume": {"value": "每周 180 分钟", "detail": f"{_MOCK} 离线占位", "evidence_ids": cite(volume)},
+            "progression": {"value": "每 2 周递增", "detail": f"{_MOCK} 先加时长再加强度",
+                            "evidence_ids": cite("进阶与负荷递增")},
         },
         "weekly_plan": [
-            {
-                "day": "周一",
-                "theme": f"{_MOCK} 低冲击有氧 + 柔韧",
-                "total_minutes": 45,
-                "is_training_day": True,
-                "rationale": f"{_MOCK} 以低冲击有氧改善心肺与体重，占位示例文案",
-                "blocks": [
-                    {
-                        "phase": "热身",
-                        "minutes": 8,
-                        "items": [
-                            {"exercise_id": "WUP-001", "name": "关节活动组合", "dosage": "每个关节 8 次", "notes": ""},
-                            {"exercise_id": "WUP-003", "name": "原地快走摆臂", "dosage": "3 分钟", "notes": ""},
-                        ],
-                    },
-                    {
-                        "phase": "主体",
-                        "minutes": 30,
-                        "items": [
-                            {
-                                "exercise_id": "AER-005",
-                                "name": "快走慢跑交替",
-                                "dosage": "快走 3 分钟 + 慢跑 2 分钟 × 6 组",
-                                "notes": f"{_MOCK} 心率 120-140",
-                            }
-                        ],
-                    },
-                    {
-                        "phase": "放松",
-                        "minutes": 7,
-                        "items": [
-                            {"exercise_id": "FLX-002", "name": "腘绳肌静态拉伸", "dosage": "每侧 30 秒 × 2", "notes": ""},
-                            {"exercise_id": "FLX-007", "name": "小腿拉伸", "dosage": "每侧 30 秒 × 2", "notes": ""},
-                        ],
-                    },
-                ],
-            },
-            {"day": "周二", "theme": f"{_MOCK} 主动恢复", "total_minutes": 15, "is_training_day": False,
-             "rationale": f"{_MOCK} 训练次日放松身体，保持柔韧练习",
-             "blocks": [{"phase": "柔韧", "minutes": 15, "items": [
-                 {"exercise_id": "FLX-001", "name": "坐位体前屈拉伸", "dosage": "30 秒 × 3", "notes": ""}]}]},
-            {"day": "周三", "theme": f"{_MOCK} 徒手抗阻", "total_minutes": 45, "is_training_day": True,
-             "rationale": f"{_MOCK} 隔日安排力量练习，发展肌肉力量",
-             "blocks": [{"phase": "主体", "minutes": 30, "items": [
-                 {"exercise_id": "RES-004", "name": "臀桥", "dosage": "15 次 × 3 组", "notes": ""},
-                 {"exercise_id": "RES-011", "name": "跪姿俯卧撑", "dosage": "12 次 × 3 组", "notes": ""},
-                 {"exercise_id": "COR-001", "name": "平板支撑", "dosage": "30 秒 × 3 组", "notes": ""}]}]},
-            {"day": "周四", "theme": f"{_MOCK} 休息", "total_minutes": 0, "is_training_day": False, "blocks": []},
-            {"day": "周五", "theme": f"{_MOCK} 低冲击有氧", "total_minutes": 45, "is_training_day": True,
-             "blocks": [{"phase": "主体", "minutes": 30, "items": [
-                 {"exercise_id": "AER-006", "name": "匀速慢跑", "dosage": "30 分钟", "notes": ""}]}]},
-            {"day": "周六", "theme": f"{_MOCK} 趣味有氧", "total_minutes": 40, "is_training_day": True,
-             "blocks": [{"phase": "主体", "minutes": 25, "items": [
-                 {"exercise_id": "AER-001", "name": "基础跳绳", "dosage": "45 秒 × 5 组，组间休 60 秒", "notes": ""}]}]},
-            {"day": "周日", "theme": f"{_MOCK} 休息 + 柔韧", "total_minutes": 15, "is_training_day": False,
-             "blocks": [{"phase": "柔韧", "minutes": 15, "items": [
-                 {"exercise_id": "FLX-004", "name": "髋屈肌拉伸", "dosage": "每侧 30 秒 × 2", "notes": ""}]}]},
+            training_day("周一", "力量与核心",
+                         [*pick("力量", "10 次 × 2 组"), *pick("力量", "30 秒 × 2 组"), *pick("肌肉耐力", "10 次 × 2 组")]
+                         or [activity("俯卧撑", "8 次 × 2 组", menu)],
+                         (resistance,)),
+            rest_day("周二", "休息"),
+            training_day("周三", "有氧耐力", [activity("快步走", "20 分钟", menu), activity("慢跑", "10 分钟", menu)],
+                         (volume,)),
+            rest_day("周四", "主动恢复"),
+            training_day("周五", "速度与灵敏",
+                         [*pick("速度", "10 秒 × 4 组"), *pick("灵敏", "4 组"), *pick("平衡", "每侧 20 秒 × 2")]
+                         or [activity("跑步", "15 分钟", menu)],
+                         (session,)),
+            training_day("周六", "趣味有氧", [activity("跳绳", "1 分钟 × 5 组", menu),
+                                         activity("深呼吸调整", "2 分钟")], (volume,)),
+            rest_day("周日", "休息"),
         ],
         "intensity_control": {
             "target_hr_zone": {"lower": 120, "upper": 140, "formula_note": f"{_MOCK} 离线占位估算"},
-            "rpe_range": "4-6",
+            "rpe_range": "11-12",
+            "rpe_scale": "6-20 级",
             "talk_test": f"{_MOCK} 能说完整句子但不能唱歌",
             "stop_signals": ["胸闷胸痛", "呼吸困难", "头晕", "关节锐痛"],
+            "evidence_ids": cite(intensity),
         },
         "risk_notes": [
-            {"level": "中", "item": f"{_MOCK} 离线占位风险项", "reason": "占位", "action": "配置真实模型后重新生成"}
+            {"level": "中", "item": f"{_MOCK} 离线占位风险项", "reason": "占位", "action": "配置真实模型后重新生成",
+             "evidence_ids": cite("运动安全与损伤预防")}
         ],
         "forbidden_or_limited": [
-            {"target": f"{_MOCK} 憋气类动作", "restriction": "禁止", "reason": "占位", "source": "安全"}
+            {"target": f"{_MOCK} 憋气类动作", "restriction": "禁止", "reason": "占位", "source": "安全",
+             "evidence_ids": []}
         ],
     }

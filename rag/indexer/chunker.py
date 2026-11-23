@@ -5,6 +5,10 @@
 - 表格：逐行展开成「表头：值；表头：值」，每块都带上表题（没有表题时用所在章节的标题），
   脱离上下文也读得懂。
 - 每块记录所属章节路径（如「第一篇 体能素质篇 > 一、速度 > 练习3：…」）与起止页码。
+- 查表数据（doc_rules.toml 的 lookup_tables，如体质标准的评分表）：表题命中的表格类型记为 lookup。
+  这类表要按「性别 × 年级 × 成绩」精确查，在线检索不拿它做相似度匹配，而是整张取出由代码查表。
+- 动作条目（doc_rules.toml 给文档配了 exercise_prefix 时）：一个「练习N：…」整理成一块，类型记为
+  exercise，并带上编号、名称、素质类别、器材等结构化信息（见 exercise.py）；它不与相邻的小块合并。
 - 不足 MIN_CHUNK 折算字数的小块：表注（「注：」「*」开头）接到上一块；章节开头的一小段
   并入紧跟的同章或下级章节的正文；孤立的一行短标题（「附件：…」「课程目标」）丢弃；
   其余带有完整句子的（如器材章节的「功能：发展速度、灵敏、协调能力。」）保留。
@@ -17,8 +21,12 @@ from dataclasses import dataclass, field, replace
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from .exercise import build_meta, equipment_vocabulary, is_entry, split_heading
+from .logger import get_logger
 from .parser.models import ParsedDocument, Segment
 from .parser.text_utils import text_units
+
+logger = get_logger()
 
 _SENTENCE_RE = re.compile(r"(?<=[。！？；!?;])|(?<=\.\s)")
 _SEPARATORS = ["\n", "。", "！", "？", "；", "!", "?", ";", ". ", "，", ", ", " ", ""]
@@ -34,13 +42,14 @@ _SENTENCE_END_RE = re.compile(r"[。！？；!?;]")
 @dataclass
 class Chunk:
     index: int
-    kind: str  # text / table
+    kind: str  # text / table / lookup / exercise
     section: str
     page_start: int
     page_end: int
     parse_method: str  # text / ocr / mixed
     content: str
     headings: tuple[str, ...] = field(default=(), repr=False)  # 章节路径的各级标题，合并小块时用
+    meta: dict = field(default_factory=dict)  # 动作条目的结构化信息，其余类型为空
 
 
 class Chunker:
@@ -56,7 +65,13 @@ class Chunker:
         )
 
     def split(self, doc: ParsedDocument) -> list[Chunk]:
-        chunks = _tidy_small_chunks(_Builder(self).run(doc.segments), self.size)
+        entries = bool(doc.exercise_prefix)
+        chunks = _tidy_small_chunks(_Builder(self).run(doc.segments), self.size, keep_entries=entries)
+        if entries:
+            chunks = _assemble_entries(chunks, doc.exercise_prefix)
+        for chunk in chunks:
+            if chunk.kind == "table" and any(p.search(chunk.content.split("\n", 1)[0]) for p in doc.lookup_tables):
+                chunk.kind = "lookup"
         return [replace(chunk, index=index) for index, chunk in enumerate(chunks)]
 
     def split_long(self, text: str) -> list[str]:
@@ -238,8 +253,12 @@ def _merge(first: Chunk, second: Chunk, headings: tuple[str, ...]) -> Chunk:
     )
 
 
-def _tidy_small_chunks(chunks: list[Chunk], size: int) -> list[Chunk]:
-    """不足 MIN_CHUNK 的小块：表注接上一块，章节开头的一小段并入下一块，孤立的短标题丢弃。"""
+def _tidy_small_chunks(chunks: list[Chunk], size: int, *, keep_entries: bool = False) -> list[Chunk]:
+    """不足 MIN_CHUNK 的小块：表注接上一块，章节开头的一小段并入下一块，孤立的短标题丢弃。
+
+    keep_entries：动作条目（「练习N：…」）无论长短都单独成块，也不接收别的小块，
+    否则器材小节开头的「功能：发展速度、灵敏、协调能力。」会并进第一个练习，把它的章节路径顶掉。
+    """
     limit = int(size * _MERGE_SLACK)
     pending = list(chunks)
     result: list[Chunk] = []
@@ -248,11 +267,16 @@ def _tidy_small_chunks(chunks: list[Chunk], size: int) -> list[Chunk]:
         chunk = pending[k]
         k += 1
         units = text_units(chunk.content)
-        if units >= MIN_CHUNK or chunk.kind == "table":
+        if units >= MIN_CHUNK or chunk.kind == "table" or (keep_entries and is_entry(chunk.headings)):
             result.append(chunk)
             continue
         prev = result[-1] if result else None
         nxt = pending[k] if k < len(pending) else None
+        if keep_entries:
+            if prev is not None and is_entry(prev.headings):
+                prev = None
+            if nxt is not None and is_entry(nxt.headings):
+                nxt = None
 
         # 表注、注释（「注：体重指数…」「*ECC = eccentric…」）：接到同一章节的上一块（含表格）
         if (
@@ -287,4 +311,64 @@ def _tidy_small_chunks(chunks: list[Chunk], size: int) -> list[Chunk]:
         if _title_like(chunk.content):
             continue
         result.append(chunk)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 动作条目
+# ---------------------------------------------------------------------------
+
+_OVERLAP_MAX = 300
+_OVERLAP_MIN = 8
+
+
+def _join_entry(first: Chunk, second: Chunk) -> Chunk:
+    """同一个练习被切成了两块（超长或中间夹了表格）：接回一块，去掉切片时带上的重叠句子。"""
+    tail = second.content
+    for size in range(min(len(first.content), len(tail), _OVERLAP_MAX), _OVERLAP_MIN - 1, -1):
+        if first.content.endswith(tail[:size]):
+            tail = tail[size:].lstrip()
+            break
+    methods = {first.parse_method, second.parse_method}
+    return replace(
+        first,
+        page_start=min(first.page_start, second.page_start),
+        page_end=max(first.page_end, second.page_end),
+        parse_method=methods.pop() if len(methods) == 1 else "mixed",
+        content=f"{first.content}\n{tail}".strip(),
+    )
+
+
+def _assemble_entries(chunks: list[Chunk], prefix: str) -> list[Chunk]:
+    """把每个「练习N：…」整理成一块 exercise，并生成结构化信息。"""
+    result: list[Chunk] = []
+    for chunk in chunks:
+        if not is_entry(chunk.headings):
+            result.append(chunk)
+            continue
+        prev = result[-1] if result else None
+        if prev is not None and prev.kind == "exercise" and prev.headings == chunk.headings:
+            result[-1] = _join_entry(prev, chunk)
+        else:
+            result.append(replace(chunk, kind="exercise"))
+
+    entries = [chunk for chunk in result if chunk.kind == "exercise"]
+    for chunk in entries:
+        # 标题行里混进的正文挪回正文，章节路径的最后一级统一写成「练习N：名称」
+        number, name, spill = split_heading(chunk.headings[-1])
+        if spill:
+            chunk.content = f"{spill}\n{chunk.content}"
+        chunk.headings = (*chunk.headings[:-1], f"练习{number}：{name}")
+        chunk.section = " > ".join(chunk.headings)
+
+    vocabulary = equipment_vocabulary([(chunk.headings, chunk.content) for chunk in entries])
+    seen: dict[str, int] = {}
+    for chunk in entries:
+        chunk.meta = build_meta(chunk.headings, chunk.content, prefix, vocabulary)
+        code = chunk.meta["code"]
+        seen[code] = seen.get(code, 0) + 1
+        if seen[code] > 1:
+            # 扫描件把编号识别重了：后出现的加后缀，保证动作编号在文档内唯一
+            chunk.meta["code"] = f"{code}{chr(ord('A') + seen[code] - 1)}"
+            logger.warning("    动作编号 %s 重复出现（第 %d 页），改记为 %s", code, chunk.page_start, chunk.meta["code"])
     return result

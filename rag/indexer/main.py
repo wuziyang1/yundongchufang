@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import time
 from pathlib import Path
@@ -147,7 +148,8 @@ class KnowledgeIndexer:
 
         title = document_title(path)
         logger.info("  解析完成：%d 页（OCR %d 页）→ %d 个切片，开始向量化...", parsed.page_count, parsed.ocr_pages, len(chunks))
-        vectors = self.embedder.embed([embedding_text(title, chunk) for chunk in chunks])
+        texts = [embedding_text(title, chunk) for chunk in chunks]
+        vectors = self.embedder.embed(texts)
         rows = [
             {
                 "doc_name": _fit(parsed.doc_name, 500),
@@ -156,6 +158,8 @@ class KnowledgeIndexer:
                 "doc_type": parsed.doc_type,
                 "doc_md5": parsed.doc_md5,
                 "doc_length": parsed.doc_length,
+                "doc_kind": _fit(parsed.kind, 50),
+                "stages": parsed.stages,
                 "chunk_index": chunk.index,
                 "chunk_type": chunk.kind,
                 "section": _fit(chunk.section, 1000),
@@ -163,10 +167,12 @@ class KnowledgeIndexer:
                 "page_end": chunk.page_end,
                 "parse_method": chunk.parse_method,
                 "content": _fit(chunk.content, 65535),
+                "meta": chunk.meta,
+                "search_text": _fit(text, 65535),
                 "content_vector": vector,
                 "embedding_model": self.settings.embedding_model,
             }
-            for chunk, vector in zip(chunks, vectors)
+            for chunk, text, vector in zip(chunks, texts, vectors)
         ]
 
         # 向量全部算好后再替换旧数据；写入中途失败则删掉半份，避免 backfill 误判为已入库
@@ -178,11 +184,11 @@ class KnowledgeIndexer:
             self.store.delete_document(parsed.doc_path_name)
             raise
 
-        tables = sum(1 for chunk in chunks if chunk.kind == "table")
-        logger.info("  已写入 %d 个切片（其中表格 %d 个），耗时 %.1fs", len(rows), tables, time.time() - started)
+        logger.info("  已写入 %d 个切片（%s），耗时 %.1fs", len(rows), _kind_counts(chunks), time.time() - started)
         return len(rows)
 
     def sync(self, files: list[Path], *, force: bool, prune: bool) -> int:
+        self.store.require_current()
         existing = self.store.indexed_documents()
         done = skipped = failed = 0
         for number, path in enumerate(files, 1):
@@ -230,11 +236,12 @@ class KnowledgeIndexer:
             output.write_text(_render_preview(title, parsed, chunks), encoding="utf-8")
             sizes = [text_units(chunk.content) for chunk in chunks] or [0]
             logger.info(
-                "  %d 页（OCR %d 页）→ %d 个切片（表格 %d），折算字数 平均 %d / 最大 %d，耗时 %.1fs → %s",
-                parsed.page_count, parsed.ocr_pages, len(chunks),
-                sum(1 for chunk in chunks if chunk.kind == "table"),
+                "  %d 页（OCR %d 页）→ %d 个切片（%s），折算字数 平均 %d / 最大 %d，耗时 %.1fs → %s",
+                parsed.page_count, parsed.ocr_pages, len(chunks), _kind_counts(chunks),
                 sum(sizes) // len(sizes), max(sizes), time.time() - started, output,
             )
+            if not parsed.kind:
+                logger.warning("  doc_rules.toml 没有登记这份文档的类别（kind），在线检索时无法按类别区分")
         return 0
 
     def stats(self) -> int:
@@ -242,26 +249,47 @@ class KnowledgeIndexer:
         if not existing:
             logger.info("集合 %s 中还没有数据", self.store.collection)
             return 0
-        for rel in sorted(existing):
-            logger.info("%s：%d 个切片", rel, self.store.count_chunks(rel))
+        for item in self.store.document_summary():
+            counts = item["counts"]
+            detail = "、".join(f"{_KIND_NAMES.get(name, name)} {count}" for name, count in sorted(counts.items()))
+            identity = f"［{item['doc_kind'] or '未登记类别'}｜{'/'.join(item['stages']) or '未登记学段'}］"
+            logger.info("%s %s：%d 个切片（%s）", item["doc_path_name"], identity, sum(counts.values()), detail)
         logger.info("共 %d 份文档、%d 个切片", len(existing), self.store.count_chunks())
+        if self.store.outdated:
+            logger.warning(
+                "集合是旧结构（缺少 %s），在线检索无法使用，请执行 --mode rebuild", "、".join(self.store.outdated)
+            )
         return 0
 
     def query(self, text: str, top_k: int) -> int:
         vector = self.embedder.embed([text])[0]
-        hits = self.store.search(vector, top_k)
-        print(f"\n查询：{text}\n")
-        for rank, hit in enumerate(hits, 1):
-            entity = hit["entity"]
-            pages = f"第 {entity['page_start']} 页"
-            if entity["page_end"] != entity["page_start"]:
-                pages = f"第 {entity['page_start']}-{entity['page_end']} 页"
-            print(f"#{rank}  相似度 {hit['distance']:.3f}  《{entity['doc_title']}》{pages}  [{entity['chunk_type']}]")
-            if entity["section"]:
-                print(f"    章节：{entity['section']}")
-            content = entity["content"].replace("\n", " ")
-            print(f"    {content[:200]}{'…' if len(content) > 200 else ''}\n")
+        print(f"\n查询：{text}")
+        for title, unit, hits in (
+            ("向量相似度", "相似度", self.store.search(vector, top_k)),
+            ("关键词（BM25）", "得分", self.store.keyword_search(text, top_k)),
+        ):
+            print(f"\n—— {title} ——\n")
+            for rank, hit in enumerate(hits, 1):
+                entity = hit["entity"]
+                pages = f"第 {entity['page_start']} 页"
+                if entity["page_end"] != entity["page_start"]:
+                    pages = f"第 {entity['page_start']}-{entity['page_end']} 页"
+                print(f"#{rank}  {unit} {hit['distance']:.3f}  《{entity['doc_title']}》{pages}  [{entity['chunk_type']}]")
+                if entity["section"]:
+                    print(f"    章节：{entity['section']}")
+                content = entity["content"].replace("\n", " ")
+                print(f"    {content[:200]}{'…' if len(content) > 200 else ''}\n")
         return 0
+
+
+_KIND_NAMES = {"text": "正文", "table": "表格", "lookup": "查表数据", "exercise": "动作条目"}
+
+
+def _kind_counts(chunks: list[Chunk]) -> str:
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        counts[chunk.kind] = counts.get(chunk.kind, 0) + 1
+    return "、".join(f"{_KIND_NAMES.get(kind, kind)} {count}" for kind, count in sorted(counts.items()))
 
 
 def _render_preview(title: str, parsed: ParsedDocument, chunks: list[Chunk]) -> str:
@@ -270,7 +298,8 @@ def _render_preview(title: str, parsed: ParsedDocument, chunks: list[Chunk]) -> 
         "",
         f"- 文件：{parsed.doc_path_name}",
         f"- 页数：{parsed.page_count}（OCR {parsed.ocr_pages} 页）",
-        f"- 切片：{len(chunks)}（表格 {sum(1 for c in chunks if c.kind == 'table')}）",
+        f"- 类别：{parsed.kind or '未登记'}；适用学段：{'、'.join(parsed.stages) or '未登记'}",
+        f"- 切片：{len(chunks)}（{_kind_counts(chunks)}）",
         "",
     ]
     for chunk in chunks:
@@ -280,6 +309,10 @@ def _render_preview(title: str, parsed: ParsedDocument, chunks: list[Chunk]) -> 
         )
         if chunk.section:
             lines.append(f"> {chunk.section}")
+        if chunk.meta:
+            brief = {key: value for key, value in chunk.meta.items() if key != "fields"}
+            brief["fields"] = list(chunk.meta.get("fields", {}))
+            lines.append(f"> meta：{json.dumps(brief, ensure_ascii=False)}")
         lines += ["", chunk.content, ""]
     return "\n".join(lines)
 

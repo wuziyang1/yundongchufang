@@ -6,7 +6,7 @@
 <title>运动处方报告</title>
 <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js"></script>
-<link rel="stylesheet" href="/static/report.css?v=20261118" />
+<link rel="stylesheet" href="/static/report.css?v=20261123" />
 </head>
 <body>
 <div id="report">
@@ -38,7 +38,7 @@
   <div class="gen-bar" v-if="generating">
     <div class="gen-track"><i></i></div>
     <span class="gen-text">{{ stage }}</span>
-    <span class="gen-hint">模型依据健康档案直接生成处方，逐字输出约需数分钟，请勿关闭页面</span>
+    <span class="gen-hint">先检索知识库，再由模型依据档案与检索到的资料生成处方，约需一至数分钟，请勿关闭页面</span>
   </div>
 
   <div class="gen-alert" v-if="genError">{{ genError }}</div>
@@ -128,6 +128,7 @@
         <div class="head-meta">
           <div class="hm-row"><span>生成日期</span><b>{{ dateOnly(rx.generated_at) }}</b></div>
           <div class="hm-row"><span>模型版本</span><b>{{ rx.versions.model || '—' }}</b></div>
+          <div class="hm-row"><span>知识库版本</span><b>{{ hasEvidenceChain ? rx.knowledge_base.fingerprint : '—' }}</b></div>
         </div>
       </header>
 
@@ -148,7 +149,10 @@
 
             <div class="f"><label>身&nbsp;&nbsp;&nbsp;&nbsp;高</label><u>{{ basic.height ?? '—' }}</u><span class="unit">cm</span></div>
             <div class="f"><label>体&nbsp;&nbsp;&nbsp;&nbsp;重</label><u>{{ basic.weight ?? '—' }}</u><span class="unit">kg</span></div>
-            <div class="f wide"><label>BMI</label><u>{{ bmi || '—' }}</u></div>
+            <div class="f wide"><label>BMI</label><u>{{ bmi || '—' }}</u>
+              <button type="button" class="lv-badge" :class="levelCls(bmiScore.level)" v-if="bmiScore"
+                      :title="bmiScore.basis" @click="jumpRef(bmiScore.id)">{{ bmiScore.level }}</button>
+            </div>
           </div>
 
           <!-- 1.1 体检数据 -->
@@ -165,11 +169,13 @@
 
           <!-- 1.2 体质测试成绩 -->
           <div class="sub-sec">
-            <h4 class="sub-title">体质测试成绩</h4>
+            <h4 class="sub-title">体质测试成绩<small v-if="rx.assessment.length">得分与等级按《国家学生体质健康标准》评分表查表，点击可看依据</small></h4>
             <div class="fit-grid" v-if="fitnessRows.length">
               <div class="fit-item" v-for="r in fitnessRows" :key="r.name">
                 <span class="fit-name">{{ r.name }}</span>
                 <b class="fit-score">{{ r.value }}</b>
+                <button type="button" class="lv-badge" :class="levelCls(r.score.level)" v-if="r.score"
+                        :title="r.score.basis" @click="jumpRef(r.score.id)">{{ r.score.score }} 分 · {{ r.score.level }}</button>
               </div>
             </div>
             <p class="sub-empty" v-else>暂无体质测试成绩记录。</p>
@@ -223,6 +229,9 @@
                 <h5>{{ r.label }}</h5>
                 <div class="pc-main">{{ r.value || '—' }}</div>
                 <p class="pc-sub" v-if="r.detail">{{ r.detail }}</p>
+                <p class="refs" v-if="r.refs.length"><span>依据</span>
+                  <button type="button" v-for="id in r.refs" :key="id" :title="refTitle(id)" @click="jumpRef(id)">{{ id }}</button>
+                </p>
               </div>
             </div>
           </div>
@@ -262,13 +271,17 @@
                     <td class="sd-items">
                       <template v-for="(p, pi) in d.pills" :key="p.key">
                         <button type="button"
-                                class="pill" :class="'pill-' + p.cls"
+                                class="pill" :class="['pill-' + p.cls, { 'pill-unverified': p.unverified }]"
                                 @click="pillClick($event, p)">
-                          {{ p.name }}<i v-if="p.dosage"> · {{ p.dosage }}</i>
+                          {{ p.name }}<i v-if="p.dosage"> · {{ p.dosage }}</i><em v-if="p.unverified">待核实</em>
                         </button>
                         <span v-if="pi < d.pills.length - 1" class="pill-arrow" aria-hidden="true">→</span>
                       </template>
-                      <p class="sd-why" v-if="dayFilter !== '全周' && d.rationale"><span>为什么这样练</span>{{ d.rationale }}</p>
+                      <p class="sd-why" v-if="dayFilter !== '全周' && d.rationale"><span>为什么这样练</span>{{ d.rationale }}
+                        <span class="refs inline" v-if="d.refs.length">
+                          <button type="button" v-for="id in d.refs" :key="id" :title="refTitle(id)" @click="jumpRef(id)">{{ id }}</button>
+                        </span>
+                      </p>
                     </td>
                     <td class="sd-min">{{ d.minutes }}</td>
                   </tr>
@@ -296,7 +309,11 @@
               <div class="risk" v-for="(r, i) in rx.risk_notes" :key="i">
                 <span class="lv" :class="'lv-' + riskCls(r.level)">{{ r.level }}</span>
                 <strong>{{ r.item }}</strong>
-                <p>{{ r.action }}</p>
+                <p>{{ r.action }}
+                  <span class="refs inline" v-if="(r.evidence_ids || []).length">
+                    <button type="button" v-for="id in r.evidence_ids" :key="id" :title="refTitle(id)" @click="jumpRef(id)">{{ id }}</button>
+                  </span>
+                </p>
               </div>
               <p class="dt-empty" v-if="!rx.risk_notes.length">未发现需特别提示的个人风险。</p>
             </div>
@@ -306,7 +323,11 @@
                 <span class="fb" :class="f.restriction === '禁止' ? 'no' : 'limit'">{{ f.restriction }}</span>
                 <div>
                   <strong>{{ f.target }}</strong>
-                  <p>{{ f.reason }}</p>
+                  <p>{{ f.reason }}
+                    <span class="refs inline" v-if="(f.evidence_ids || []).length">
+                      <button type="button" v-for="id in f.evidence_ids" :key="id" :title="refTitle(id)" @click="jumpRef(id)">{{ id }}</button>
+                    </span>
+                  </p>
                 </div>
               </div>
               <p class="dt-empty" v-if="!rx.forbidden_or_limited.length">无特别禁忌。</p>
@@ -315,12 +336,84 @@
               <h4>监测建议</h4>
               <ul class="mon">
                 <li><span>心率监测</span>运动中控制在 {{ hrText }}</li>
-                <li><span>主观感受</span>RPE {{ rx.intensity_control.rpe_range || '—' }} 为宜</li>
+                <li><span>主观感受</span>RPE {{ rx.intensity_control.rpe_range || '—' }}<template v-if="rx.intensity_control.rpe_scale">（{{ rx.intensity_control.rpe_scale }}量表）</template> 为宜</li>
                 <li><span>谈话测试</span>{{ rx.intensity_control.talk_test || '—' }}</li>
                 <li class="stop"><span>立即停止</span>{{ stopSignals }}</li>
               </ul>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- 6 处方依据：国标评分、知识库摘录、知识库未覆盖的问题 -->
+      <section class="sec" v-if="hasData">
+        <div class="sec-head purple"><i>6</i><h3>处方依据（知识库）</h3></div>
+        <div class="sec-body">
+          <template v-if="hasEvidenceChain">
+            <p class="kb-summary">{{ kbSummary }}</p>
+
+            <div class="kb-gaps" v-if="rx.knowledge_gaps.length">
+              <h4>知识库未覆盖的问题<small>以下问题在知识库中没有检索到针对性资料，处方中的相关安排没有资料依据，须专业人员复核；补充相应资料入库后重新生成即可覆盖</small></h4>
+              <ul>
+                <li v-for="g in rx.knowledge_gaps" :key="g.topic"><b>{{ g.topic }}</b>{{ g.note }}</li>
+              </ul>
+            </div>
+
+            <h4 class="kb-title" v-if="rx.assessment.length">体质评定<small>代码按知识库中的国标评分表查表，不由模型判断</small></h4>
+            <div class="ref-list">
+              <div class="ref-card fact" v-for="a in rx.assessment" :key="a.id" :id="'ref-' + a.id"
+                   :class="{ flash: flashRef === a.id }">
+                <div class="ref-head">
+                  <span class="ref-id">{{ a.id }}</span>
+                  <strong>{{ a.name }}：{{ a.raw }}</strong>
+                  <span class="lv-badge static" :class="levelCls(a.level)">{{ a.score }} 分 · {{ a.level }}</span>
+                </div>
+                <p class="ref-text">{{ a.basis }}</p>
+                <p class="ref-src">{{ a.source }}</p>
+              </div>
+            </div>
+
+            <h4 class="kb-title">权威资料摘录<small>按处方要做的每个决定分别检索；标签是引用该条的处方位置</small></h4>
+            <div class="ref-list">
+              <div class="ref-card" v-for="e in citedEvidence" :key="e.id" :id="'ref-' + e.id"
+                   :class="{ flash: flashRef === e.id, open: openRefs[e.id] }">
+                <div class="ref-head">
+                  <span class="ref-id">{{ e.id }}</span>
+                  <strong>{{ e.source }}</strong>
+                </div>
+                <p class="ref-tags">
+                  <em v-for="t in e.topics" :key="'t' + t" class="topic">{{ t }}</em>
+                  <em v-for="c in e.cited_by" :key="'c' + c">{{ c }}</em>
+                </p>
+                <p class="ref-text clamp" @click="toggleRef(e.id)">{{ e.content }}</p>
+                <button type="button" class="ref-more" @click="toggleRef(e.id)">{{ openRefs[e.id] ? '收起' : '展开原文' }}</button>
+              </div>
+            </div>
+
+            <template v-if="uncitedEvidence.length">
+              <button type="button" class="kb-toggle" @click="showUncited = !showUncited">
+                {{ showUncited ? '收起' : '查看' }}检索到但未被引用的 {{ uncitedEvidence.length }} 条摘录
+              </button>
+              <div class="ref-list" v-if="showUncited">
+                <div class="ref-card muted" v-for="e in uncitedEvidence" :key="e.id" :id="'ref-' + e.id"
+                     :class="{ flash: flashRef === e.id, open: openRefs[e.id] }">
+                  <div class="ref-head">
+                    <span class="ref-id">{{ e.id }}</span>
+                    <strong>{{ e.source }}</strong>
+                  </div>
+                  <p class="ref-tags"><em v-for="t in e.topics" :key="t" class="topic">{{ t }}</em></p>
+                  <p class="ref-text clamp" @click="toggleRef(e.id)">{{ e.content }}</p>
+                  <button type="button" class="ref-more" @click="toggleRef(e.id)">{{ openRefs[e.id] ? '收起' : '展开原文' }}</button>
+                </div>
+              </div>
+            </template>
+          </template>
+          <p class="kb-legacy" v-else-if="rx.versions.model === 'mock'">
+            离线占位数据：mock 模式下没有连上知识库，这份结果不含任何依据，仅用于联调页面。
+          </p>
+          <p class="kb-legacy" v-else>
+            这份处方生成于知识库接入之前，没有可追溯的依据（动作与要点来自早期的示例数据）。点「生成处方」重新生成，即可得到带国标评分与权威资料出处的版本。
+          </p>
         </div>
       </section>
 
@@ -330,7 +423,7 @@
       </div>
     </div>
   </div>
-  <!-- 动作详情弹层：悬停预览，点击固定 -->
+  <!-- 动作详情弹层：点击课表里的动作标签弹出 -->
   <div class="move-pop" :class="{ up: pop.up }" v-if="pop.show && pop.pill"
        :style="{ left: pop.x + 'px', top: pop.y + 'px' }">
     <div class="mp-head">
@@ -338,8 +431,27 @@
       <em class="pill" :class="'pill-' + pop.pill.cls">{{ pop.pill.category || '动作' }}</em>
       <button class="mp-close" type="button" v-if="pop.pinned" @click="closePop">×</button>
     </div>
-    <div class="mp-dose" v-if="pop.pill.dosage"><span>剂量</span>{{ pop.pill.dosage }}</div>
+    <div class="mp-dose" v-if="pop.pill.dosage"><span>处方剂量</span>{{ pop.pill.dosage }}</div>
     <div class="mp-note" v-if="pop.pill.notes"><span>当日备注</span>{{ pop.pill.notes }}</div>
+    <div class="mp-note" v-if="popDetail.dosage_hint"><span>{{ popDetail.source ? '原书用量' : '参考用量' }}</span>{{ popDetail.dosage_hint }}</div>
+    <div class="mp-note" v-if="popDetail.equipment"><span>器材</span>{{ popDetail.equipment }}</div>
+    <div class="mp-sec" v-for="sec in popDetail.sections" :key="sec.label">
+      <h5>{{ sec.label }}</h5>
+      <p>{{ sec.text }}</p>
+    </div>
+    <!-- 常规活动：没有动作条目，依据是提到它的知识库摘录 -->
+    <div class="mp-sec" v-if="!pop.pill.id">
+      <h5>常规活动</h5>
+      <p v-if="pop.pill.unverified" class="warn">知识库摘录里没有找到这项活动，没有资料依据，须专业人员核实后再执行。</p>
+      <p v-else>这项活动不在训练手册的动作条目里，依据是知识库摘录中对它的说明。</p>
+    </div>
+    <div class="mp-sec" v-if="pop.pill.refs.length">
+      <h5>依据</h5>
+      <p class="refs">
+        <button type="button" v-for="id in pop.pill.refs" :key="id" :title="refTitle(id)" @click="jumpRef(id)">{{ id }}</button>
+      </p>
+    </div>
+    <!-- 旧版留档的动作详情 -->
     <div class="mp-sec" v-if="popDetail.key_points.length">
       <h5>动作要点</h5>
       <ul><li v-for="k in popDetail.key_points" :key="k">{{ k }}</li></ul>
@@ -348,6 +460,7 @@
       <h5>常见错误（避免）</h5>
       <ul><li v-for="k in popDetail.common_errors" :key="k">{{ k }}</li></ul>
     </div>
+    <p class="mp-src" v-if="popDetail.source">出处：{{ popDetail.source }}</p>
   </div>
 
   <!-- 右侧 AI 输出抽屉：生成时展示模型实时输出 -->
@@ -377,6 +490,6 @@
 
 <script src="/static/sse.js?v=20261118"></script>
 <script src="/static/ai-panel.js?v=20261118"></script>
-<script src="/static/report.js?v=20261118b"></script>
+<script src="/static/report.js?v=20261123b"></script>
 </body>
 </html>

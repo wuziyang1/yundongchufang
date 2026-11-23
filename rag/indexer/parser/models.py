@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 
@@ -52,3 +53,9 @@ class ParsedDocument:
     page_count: int
     ocr_pages: int
     segments: list[Segment]
+    # 文档身份，来自 doc_rules.toml：类别、适用学段、动作编号前缀（非空表示「练习N：」按动作条目入库）
+    kind: str = ""
+    stages: list[str] = field(default_factory=list)
+    exercise_prefix: str = ""
+    # 表题命中其一的表格是查表数据（评分表），切片类型记为 lookup
+    lookup_tables: list[re.Pattern] = field(default_factory=list)

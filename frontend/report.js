@@ -35,23 +35,43 @@ const GENERAL_TIPS = [
   '出现不适立即停止运动并告知家长或教师。',
 ];
 
-/* 动作类别归属：按动作库 category / 编号前缀判断 */
+/* 旧版留档（动作来自早期的 JSON 动作库）按编号前缀归类；新处方的动作类别由后端从知识库带出 */
 const PREFIX_CATEGORY = {
   WUP: '热身', AER: '有氧', RES: '抗阻', COR: '核心',
   FLX: '柔韧', SPD: '速度灵敏', CLD: '放松',
 };
 
-/* 课表标签配色：动作类别 → 色组（图例按同一分组合并展示） */
+/* 课表标签配色：素质类别 → 色组（图例按同一分组合并展示）。
+   前半是知识库训练手册的素质分类，后半是旧版留档的分类 */
 const CATEGORY_STYLE = {
-  热身: 'warm', 有氧: 'aer', 抗阻: 'str', 核心: 'str',
-  速度灵敏: 'spd', 柔韧: 'cool', 放松: 'cool',
+  心肺耐力: 'aer', 肌肉耐力: 'str', 力量: 'str', 速度: 'spd', 灵敏: 'spd', 协调: 'spd',
+  平衡: 'bal', 柔韧: 'cool', 综合: 'other', 常规活动: 'warm',
+  热身: 'warm', 有氧: 'aer', 抗阻: 'str', 核心: 'str', 速度灵敏: 'spd', 放松: 'cool',
 };
-const LEGEND_LABELS = [
+/* 旧版留档（知识库接入前生成）的图例 */
+const LEGACY_LEGEND_LABELS = [
   { cls: 'warm', label: '热身' },
   { cls: 'aer', label: '有氧' },
   { cls: 'str', label: '力量 / 核心' },
   { cls: 'spd', label: '速度灵敏' },
   { cls: 'cool', label: '拉伸 / 放松' },
+];
+const LEGEND_LABELS = [
+  { cls: 'aer', label: '心肺耐力' },
+  { cls: 'str', label: '力量 / 肌肉耐力' },
+  { cls: 'spd', label: '速度 / 灵敏 / 协调' },
+  { cls: 'bal', label: '平衡' },
+  { cls: 'cool', label: '柔韧拉伸' },
+  { cls: 'warm', label: '常规活动' },
+];
+
+/* 动作详情弹层的分段：知识库动作条目按原书小标题拆出的各段 */
+const DETAIL_SECTIONS = [
+  { key: 'purpose', label: '练习功能' },
+  { key: 'start', label: '起始姿势' },
+  { key: 'steps', label: '练习步骤' },
+  { key: 'tips', label: '指导提示' },
+  { key: 'safety', label: '安全事项' },
 ];
 
 /* 空骨架：没有数据时报告版式照常渲染，字段留白而非整页隐藏 */
@@ -71,10 +91,15 @@ const EMPTY_RX = {
   exercise_details: [],
   intensity_control: {
     target_hr_zone: { lower: null, upper: null, formula_note: '' },
-    rpe_range: '', talk_test: '', stop_signals: [],
+    rpe_range: '', rpe_scale: '', talk_test: '', stop_signals: [], evidence_ids: [],
   },
   risk_notes: [],
   forbidden_or_limited: [],
+  // 依据链路：国标评分（S 条目）、知识库摘录（E 条目）、知识库未覆盖的问题、生成时的知识库状态
+  assessment: [],
+  evidence: [],
+  knowledge_gaps: [],
+  knowledge_base: { available: false, fingerprint: '', retrieval_mode: '', stage: '', documents: [], topics: [] },
   disclaimer: '',
 };
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -116,6 +141,9 @@ createApp({
       formSaving: false,
       formError: '',
       generalTips: GENERAL_TIPS,
+      showUncited: false,
+      openRefs: {},
+      flashRef: '',
     };
   },
 
@@ -165,7 +193,17 @@ createApp({
       ];
     },
 
-    /* 体测成绩：取自档案 fitness_test，只展示成绩不评等级 */
+    /* 国标评分（S 条目）按档案字段名索引：后端按知识库里的评分表查表得到 */
+    scoreByKey() {
+      const map = {};
+      (this.rx.assessment || []).forEach((a) => { map[a.key] = a; });
+      return map;
+    },
+    bmiScore() {
+      return this.scoreByKey.BMI || null;
+    },
+
+    /* 体测成绩：成绩取自档案 fitness_test；得分与等级取自国标评分（没有评分时只显示成绩） */
     fitnessRows() {
       const ft = this.rawFitness;
       const rows = [];
@@ -175,6 +213,7 @@ createApp({
         rows.push({
           name: it.label,
           value: it.unit && /^[\d.]+$/.test(raw) ? `${raw} ${it.unit}` : raw,
+          score: this.scoreByKey[it.key] || null,
         });
       });
       return rows;
@@ -225,17 +264,20 @@ createApp({
     /* 3 运动方案一览表 */
     planRows() {
       const f = this.rx.fitt_vp;
-      const z = this.rx.intensity_control.target_hr_zone || {};
-      const hrLine = z.lower && z.upper
-        ? `靶心率 ${z.lower}–${z.upper} 次/分　RPE ${this.rx.intensity_control.rpe_range || '—'}`
-        : `RPE ${this.rx.intensity_control.rpe_range || '—'}`;
+      const ic = this.rx.intensity_control;
+      const z = ic.target_hr_zone || {};
+      const rpe = `RPE ${ic.rpe_range || '—'}${ic.rpe_scale ? `（${ic.rpe_scale}）` : ''}`;
+      const hrLine = z.lower && z.upper ? `靶心率 ${z.lower}–${z.upper} 次/分　${rpe}` : rpe;
+      const row = (label, k, cls, item, detail) => ({
+        label, k, cls, value: item.value, detail: detail ?? item.detail, refs: item.evidence_ids || [],
+      });
       return [
-        { label: '(Type) 运动类型', k: 'T', cls: 't2', value: f.type.value, detail: f.type.detail },
-        { label: '(Intensity) 运动强度', k: 'I', cls: 'i', value: f.intensity.value, detail: `${hrLine}　${f.intensity.detail || ''}`.trim() },
-        { label: '(Time) 运动时间', k: 'T', cls: 't', value: f.time.value, detail: f.time.detail },
-        { label: '(Frequency) 运动频率', k: 'F', cls: 'f', value: f.frequency.value, detail: f.frequency.detail },
-        { label: '(Volume) 周运动总量', k: 'V', cls: 'v', value: f.volume.value, detail: f.volume.detail },
-        { label: '(Progression) 运动进阶', k: 'P', cls: 'p', value: f.progression.value, detail: f.progression.detail || '' },
+        row('(Type) 运动类型', 'T', 't2', f.type),
+        row('(Intensity) 运动强度', 'I', 'i', f.intensity, `${hrLine}　${f.intensity.detail || ''}`.trim()),
+        row('(Time) 运动时间', 'T', 't', f.time),
+        row('(Frequency) 运动频率', 'F', 'f', f.frequency),
+        row('(Volume) 周运动总量', 'V', 'v', f.volume),
+        row('(Progression) 运动进阶', 'P', 'p', f.progression, f.progression.detail || ''),
       ];
     },
 
@@ -257,6 +299,9 @@ createApp({
               phase: b.phase || '',
               category,
               cls: CATEGORY_STYLE[category] || 'other',
+              refs: it.evidence_ids || [],
+              // 常规活动的名称没有在知识库摘录里找到：后端标记为待核实
+              unverified: it.verified === false,
             });
           });
         });
@@ -265,6 +310,7 @@ createApp({
           theme: d.theme || (d.is_training_day ? '训练日' : '休息'),
           rest: !d.is_training_day,
           rationale: d.rationale || '',
+          refs: d.evidence_ids || [],
           pills,
           minutes: d.total_minutes ? `约 ${d.total_minutes} 分钟` : '—',
         };
@@ -281,7 +327,8 @@ createApp({
     legendCats() {
       const seen = new Set();
       this.schedule.forEach((d) => d.pills.forEach((p) => seen.add(p.cls)));
-      return LEGEND_LABELS.filter((l) => seen.has(l.cls));
+      const labels = this.hasEvidenceChain ? LEGEND_LABELS : LEGACY_LEGEND_LABELS;
+      return labels.filter((l) => seen.has(l.cls));
     },
     /* 概览条：类型 · 强度（靶心率）· 进阶，取自 FITT-VP */
     planBanner() {
@@ -291,13 +338,51 @@ createApp({
       return [f.type.value, f.intensity.value, hr, f.progression.value]
         .filter(Boolean).join(' · ');
     },
-    /* 弹层详情：从动作库取要点与常见错误 */
+    /* 弹层详情：知识库动作条目的各段文字与出处；旧版留档则是要点与常见错误 */
     popDetail() {
       const d = this.pop.pill ? this.detailOf(this.pop.pill.id) : {};
       return {
+        sections: DETAIL_SECTIONS
+          .map((sec) => ({ label: sec.label, text: d[sec.key] || '' }))
+          .filter((sec) => sec.text),
+        equipment: (d.equipment || []).filter((e) => e && e !== '无').join('、'),
+        dosage_hint: d.dosage_hint || '',
+        source: d.source || '',
         key_points: d.key_points || [],
         common_errors: d.common_errors || [],
       };
+    },
+
+    /* ---------- 6 处方依据 ---------- */
+
+    evidenceMap() {
+      const map = {};
+      (this.rx.evidence || []).forEach((e) => { map[e.id] = e; });
+      (this.rx.assessment || []).forEach((a) => { map[a.id] = a; });
+      return map;
+    },
+    citedEvidence() {
+      return (this.rx.evidence || []).filter((e) => (e.cited_by || []).length);
+    },
+    uncitedEvidence() {
+      return (this.rx.evidence || []).filter((e) => !(e.cited_by || []).length);
+    },
+    /* 这份处方有没有依据链路：知识库改造之前生成的留档没有 */
+    hasEvidenceChain() {
+      return !!(this.rx.knowledge_base && this.rx.knowledge_base.available);
+    },
+    kbSummary() {
+      const kb = this.rx.knowledge_base || {};
+      const docs = (kb.documents || []).length;
+      const topics = kb.topics || [];
+      const covered = topics.filter((t) => t.covered).length;
+      return [
+        `知识库版本 ${kb.fingerprint || '—'}（${docs} 份资料）`,
+        kb.stage && `按「${kb.stage}」学段检索`,
+        topics.length && `${topics.length} 个检索主题中 ${covered} 个有资料`,
+        `引用摘录 ${this.citedEvidence.length} 条`,
+        kb.retrieval_mode === 'dense' && '本次重排不可用，相关性由向量相似度把关',
+      ].filter(Boolean).join(' · ');
     },
 
   },
@@ -324,16 +409,6 @@ createApp({
       this.closePop();
     });
     window.addEventListener('scroll', () => { if (this.pop.show) this.closePop(); }, true);
-
-    // 动作库始终加载：生成前用于空态，生成后用于回填动作要点
-    fetch('/api/v1/exercises')
-      .then((r) => r.json())
-      .then((d) => {
-        (d.exercises || []).forEach((e) => {
-          if (!this.exerciseMap[e.id]) this.exerciseMap[e.id] = e;
-        });
-      })
-      .catch(() => {});
 
     // 学生列表与已有结果清单都到位后再定位默认学生，
     // 这样首个学生有已生成结果时能直接自动载入
@@ -410,8 +485,13 @@ createApp({
     },
 
     applyResult(rx) {
-      this.rx = rx;
+      // 旧版留档没有依据链路字段：用空骨架补齐，模板不必逐处判空
+      this.rx = { ...clone(EMPTY_RX), ...rx };
+      // 动作详情只取这份处方自带的（后端从知识库动作条目回填），不再另拉动作库
+      this.exerciseMap = {};
       (rx.exercise_details || []).forEach((e) => { this.exerciseMap[e.id] = e; });
+      this.showUncited = false;
+      this.openRefs = {};
       this.hasData = true;
       document.title = `${rx.name || ''}运动处方报告`;
     },
@@ -567,7 +647,7 @@ createApp({
           this.pushAiNote(payload.message + '…');
           break;
         case 'thinking':
-          this.stage = '模型正在设计运动处方…';
+          this.stage = '模型正在依据检索到的资料设计运动处方…';
           this.appendThink(AI_TITLE, payload.text);
           break;
         case 'token':
@@ -600,8 +680,41 @@ createApp({
     categoryOf(it) {
       const d = this.detailOf(it.exercise_id);
       if (d.category) return d.category;
+      // 没有编号的是常规活动（步行、慢跑等，依据来自知识库摘录而不是动作条目）
+      if (!it.exercise_id) return '常规活动';
       const prefix = (it.exercise_id || '').split('-')[0];
       return PREFIX_CATEGORY[prefix] || '';
+    },
+
+    /* ---------- 依据引用 ---------- */
+
+    /* 引用角标的悬停提示：出处，或评分结论 */
+    refTitle(id) {
+      const e = this.evidenceMap[id];
+      if (!e) return id;
+      return e.source ? `${e.source}` : id;
+    },
+    /* 点击引用角标：滚动到「处方依据」里对应的条目并闪一下 */
+    jumpRef(id) {
+      const e = this.evidenceMap[id];
+      if (!e) return;
+      if (id.startsWith('E') && !(e.cited_by || []).length) this.showUncited = true;
+      this.openRefs[id] = true;
+      this.closePop();
+      this.$nextTick(() => {
+        const el = document.getElementById('ref-' + id);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        this.flashRef = id;
+        setTimeout(() => { if (this.flashRef === id) this.flashRef = ''; }, 1800);
+      });
+    },
+    toggleRef(id) { this.openRefs[id] = !this.openRefs[id]; },
+    levelCls(level) {
+      return {
+        优秀: 'lv-a', 良好: 'lv-b', 及格: 'lv-c', 不及格: 'lv-d',
+        正常: 'lv-a', 超重: 'lv-c', 低体重: 'lv-c', 肥胖: 'lv-d',
+      }[level] || 'lv-c';
     },
 
     /* ---------- 动作详情弹层 ---------- */

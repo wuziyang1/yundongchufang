@@ -1,10 +1,14 @@
-"""数据资产加载：动作库、知识卡片、学生档案、急症词表。
+"""数据资产加载：学生档案、急症词表，以及生成结果的留档。
 
 启动时一次性读入内存，v1 不引入数据库。
 
 学生档案只有一个来源：data/mock_students.json（前端录入的新档案也追加进来）。
 生成留档只有两个目录：画像进 data/profiles，处方进 data/prescriptions，
 同一学号重复生成直接覆盖，均以 <student_id>.json 命名。
+
+处方用到的专业知识（评分表、权威资料、动作）不在这里：它们全部来自 Milvus 知识库，
+见 app/services/kb。data/exercises.json 与 data/knowledge.json 是早期由 AI 整理的动作库与
+知识卡片，文件保留，但已不参与检索与处方生成。
 """
 
 from __future__ import annotations
@@ -24,26 +28,6 @@ from app.config import DATA_DIR
 def _load(filename: str) -> dict[str, Any]:
     with (DATA_DIR / filename).open(encoding="utf-8") as handle:
         return json.load(handle)
-
-
-@lru_cache(maxsize=1)
-def exercise_library() -> dict[str, Any]:
-    return _load("exercises.json")
-
-
-@lru_cache(maxsize=1)
-def exercise_index() -> dict[str, dict[str, Any]]:
-    return {item["id"]: item for item in exercise_library()["exercises"]}
-
-
-@lru_cache(maxsize=1)
-def knowledge_base() -> dict[str, Any]:
-    return _load("knowledge.json")
-
-
-@lru_cache(maxsize=1)
-def knowledge_cards() -> list[dict[str, Any]]:
-    return knowledge_base()["cards"]
 
 
 STUDENTS_FILE = DATA_DIR / "mock_students.json"

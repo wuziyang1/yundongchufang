@@ -18,13 +18,9 @@ from app.config import settings  # noqa: E402
 from app.prompts import prescription as rx_prompt  # noqa: E402
 from app.prompts import profile as pf_prompt  # noqa: E402
 from app.schemas.record import HealthRecord  # noqa: E402
-from app.services import rag  # noqa: E402
 from app.services.data_loader import find_student  # noqa: E402
-from app.services.prescription_service import (  # noqa: E402
-    DEFAULT_EQUIPMENT,
-    filter_candidates,
-    parse_age,
-)
+from app.services.kb import context as kb_context  # noqa: E402
+from app.services.prescription_service import parse_age  # noqa: E402
 
 STUDENT_ID = "BJ2025090314"
 
@@ -42,23 +38,17 @@ async def build_profile_prompt() -> tuple[str, str]:
 
 
 async def build_prescription_prompt() -> tuple[str, str]:
-    """处方 prompt 直接由原始档案构造，与线上链路一致。"""
+    """处方 prompt 由原始档案与知识库材料构造，与线上链路一致（需要 Milvus 已启动）。"""
     record = HealthRecord.model_validate(find_student(STUDENT_ID))
     record_view = record.to_prompt_dict()
-    age = parse_age(record)
-    candidates = filter_candidates(
-        age=age,
-        equipment=DEFAULT_EQUIPMENT,
-        venue=[],
-    )
-    # 与 prescription_service 保持一致：候选排序截断 + 知识卡片检索
-    candidates = await rag.rank_exercises(candidates, record_view)
-    cards = await rag.retrieve_knowledge_for_prescription(record_view)
+    t0 = time.time()
+    context = await kb_context.load(record_view)
+    print(f"知识库检索 {time.time() - t0:.1f}s：{len(context.evidence)} 条摘录，"
+          f"{len(context.candidates)} 个候选动作，{len(context.gaps)} 个主题未覆盖")
     return rx_prompt.SYSTEM, rx_prompt.build_user_prompt(
         record=record_view,
-        age=age,
-        candidates=candidates,
-        knowledge_cards=cards,
+        age=parse_age(record),
+        context=context,
     )
 
 

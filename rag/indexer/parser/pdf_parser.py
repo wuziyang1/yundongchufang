@@ -63,7 +63,9 @@ _HEADING_PATTERNS = [
     (2, re.compile(r"^[一二三四五六七八九十]+、")),
     (3, re.compile(r"^[（(][一二三四五六七八九十]+[）)]")),
     (3, re.compile(r"^问题\s*\d+")),
-    (4, re.compile(r"^练习\s*\d+\s*[：:]")),
+    # 「练习12：平板支撑」；扫描件偶尔识别丢了冒号（「练习145叠罗汉」），后面直接跟名称时也算，
+    # 但「练习3组」「练习15~20次」是正文
+    (4, re.compile(r"^练习\s*\d+\s*(?:[：:]|(?=[一-鿿“\"])(?![次组遍秒分个米天周轮]))")),
 ]
 
 # ---- 前置页：封面、版权页（ISBN、CIP、定价、印刷信息）、编委会名单 ----
@@ -191,6 +193,10 @@ class PDFParser:
             page_count=page_count,
             ocr_pages=sum(1 for page in pages if page.method == "ocr"),
             segments=segments,
+            kind=rules.kind,
+            stages=list(rules.stages),
+            exercise_prefix=rules.exercise_prefix,
+            lookup_tables=list(rules.lookup_tables),
         )
 
 

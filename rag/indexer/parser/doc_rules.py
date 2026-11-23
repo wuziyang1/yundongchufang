@@ -1,8 +1,11 @@
-"""按文档定制的清洗规则，配置在 rag/doc_rules.toml。
+"""按文档定制的规则，配置在 rag/doc_rules.toml。
 
 通用规则（前置页、论文标题区与作者脚注、OCR 噪点、小切片等）写在解析器和切片器里，对所有文档生效；
 个别文档特有的版式问题（某本书的章节编号写法、某篇期刊的字形映射错误、不该入库的附录）
 在这里按文件名配置。规则在解析阶段生效，重新入库时脏数据不会再回来。
+
+这里还登记每份文档的「身份」：文档类别、适用学段、是否按动作条目入库。它们随切片写入 Milvus，
+在线检索据此按学段过滤、区分评分表与动作条目，后端不需要认识具体的文件名。
 """
 
 from __future__ import annotations
@@ -17,6 +20,9 @@ from ..logger import get_logger
 
 logger = get_logger()
 
+# 适用学段的固定取值，与需求文档「按年龄段分别构建知识库」的四档一致
+STAGES = ("小学低年级", "小学高年级", "初中", "高中")
+
 
 @dataclass
 class DocRules:
@@ -25,6 +31,15 @@ class DocRules:
     drop_sections: list[re.Pattern] = field(default_factory=list)
     drop_lines: list[re.Pattern] = field(default_factory=list)
     replacements: list[tuple[re.Pattern, str]] = field(default_factory=list)
+    # 文档身份：类别（标准 / 指南 / 课程标准 / 训练手册 / 立场声明…）、适用学段、动作编号前缀
+    kind: str = ""
+    stages: list[str] = field(default_factory=lambda: list(STAGES))
+    exercise_prefix: str = ""
+    # 表题命中这些正则的表格是「查表数据」（评分表），入库时类型记为 lookup，不参与相似度检索
+    lookup_tables: list[re.Pattern] = field(default_factory=list)
+
+    def is_lookup_table(self, title: str) -> bool:
+        return any(p.search(title) for p in self.lookup_tables)
 
     def heading_level(self, text: str) -> int:
         for pattern, level in self.headings:
@@ -90,4 +105,19 @@ class DocRuleBook:
             rules.drop_sections += [_compile(p, where) for p in entry.get("drop_sections", [])]
             rules.drop_lines += [_compile(p, where) for p in entry.get("drop_lines", [])]
             rules.replacements += [(_compile(p, where), repl) for p, repl in entry.get("replacements", [])]
+            if "kind" in entry:
+                rules.kind = str(entry["kind"]).strip()
+            if "stages" in entry:
+                unknown = [stage for stage in entry["stages"] if stage not in STAGES]
+                if unknown or not entry["stages"]:
+                    raise ValueError(
+                        f"doc_rules.toml 中 {where} 的 stages 只能取 {'、'.join(STAGES)}，且不能为空：{entry['stages']!r}"
+                    )
+                rules.stages = [stage for stage in STAGES if stage in entry["stages"]]
+            rules.lookup_tables += [_compile(p, where) for p in entry.get("lookup_tables", [])]
+            if "exercise_prefix" in entry:
+                prefix = str(entry["exercise_prefix"]).strip()
+                if not re.fullmatch(r"[A-Z]{1,4}", prefix):
+                    raise ValueError(f"doc_rules.toml 中 {where} 的 exercise_prefix 须为 1 至 4 个大写字母：{prefix!r}")
+                rules.exercise_prefix = prefix
         return rules

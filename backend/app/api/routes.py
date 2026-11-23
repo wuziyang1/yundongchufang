@@ -15,20 +15,19 @@ from pydantic import BaseModel
 from app.config import settings
 from app.llm.provider import LLMError
 from app.schemas.record import HealthRecord
-from app.services import prescription_service, profile_service, rag
+from app.services import prescription_service, profile_service
 from app.services.common import current_versions
 from app.services.data_loader import (
     all_students,
-    record_emergency,
-    exercise_index,
-    exercise_library,
     find_student,
-    knowledge_base,
-    knowledge_cards,
     load_saved_result,
+    record_emergency,
     save_student,
     saved_result_ids,
 )
+from app.services.kb import exercises as kb_exercises
+from app.services.kb import rerank, store
+from app.services.kb.store import KnowledgeBaseUnavailable
 from app.services.safety import check_emergency
 
 router = APIRouter(prefix="/api/v1")
@@ -64,18 +63,26 @@ def _highlights(student: dict[str, Any]) -> list[str]:
     return notes[:3]
 
 
+def _knowledge_base_status() -> dict[str, Any]:
+    """知识库（Milvus）当前状态：是否可用、指纹、文档清单、相关性把关方式。"""
+    status = store.status()
+    status["rerank"] = {
+        "model": settings.rerank_model,
+        "problem": rerank.problem(),
+        "min_score": settings.kb_rerank_min_score,
+    }
+    return status
+
+
 @router.get("/meta")
 def get_meta() -> dict[str, Any]:
-    """前端启动时拉取的元信息：版本、模型、资产规模。"""
+    """前端启动时拉取的元信息：版本、模型、知识库状态。"""
     return {
         "llm_provider": settings.llm_provider,
         "model": settings.active_model,
         "versions": current_versions().model_dump(),
-        "exercise_count": len(exercise_library()["exercises"]),
-        "knowledge_card_count": len(knowledge_cards()),
         "student_count": len(all_students()),
-        "contraindication_tags": exercise_library()["contraindication_tag_vocabulary"],
-        "rag": rag.status(),
+        "knowledge_base": _knowledge_base_status(),
     }
 
 
@@ -117,30 +124,39 @@ def get_student(student_id: str) -> dict[str, Any]:
     return student
 
 
+@router.get("/knowledge-base")
+def get_knowledge_base() -> dict[str, Any]:
+    """知识库（Milvus）状态与文档清单。处方的评分表、权威资料摘录、动作都来自这里。"""
+    return _knowledge_base_status()
+
+
 @router.get("/exercises")
 def list_exercises() -> dict[str, Any]:
-    return exercise_library()
+    """知识库里的全部动作条目（训练手册的练习），附可选器材清单。"""
+    try:
+        catalog = kb_exercises.catalog()
+    except KnowledgeBaseUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"知识库不可用：{exc}") from exc
+    return {
+        "source": "knowledge_base",
+        "fingerprint": store.info()["fingerprint"],
+        "available_equipment": settings.kb_equipment,
+        "count": len(catalog),
+        "exercises": [
+            {**exercise.detail(), "group": exercise.group} for exercise in catalog.values()
+        ],
+    }
 
 
 @router.get("/exercises/{exercise_id}")
 def get_exercise(exercise_id: str) -> dict[str, Any]:
-    exercise = exercise_index().get(exercise_id)
+    try:
+        exercise = kb_exercises.catalog().get(exercise_id)
+    except KnowledgeBaseUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"知识库不可用：{exc}") from exc
     if exercise is None:
         raise HTTPException(status_code=404, detail=f"未找到动作 {exercise_id}")
-    return exercise
-
-
-@router.get("/knowledge")
-def list_knowledge() -> dict[str, Any]:
-    return knowledge_base()
-
-
-@router.get("/knowledge/{card_id}")
-def get_knowledge(card_id: str) -> dict[str, Any]:
-    for card in knowledge_cards():
-        if card["id"] == card_id:
-            return card
-    raise HTTPException(status_code=404, detail=f"未找到知识卡片 {card_id}")
+    return {**exercise.detail(), "group": exercise.group}
 
 
 @router.get("/pregenerated")
@@ -258,11 +274,11 @@ async def generate_prescription(body: PrescriptionRequestBody) -> StreamingRespo
     """一人一策运动处方，以 SSE 流式返回。
 
     事件类型：
-      status  进度说明
+      status  进度说明（开始生成、知识库检索结果）
       token   模型原始输出片段
       retry   触发了一次重生成，data 为问题清单
       result  最终处方 JSON
-      error   生成失败
+      error   生成失败（含知识库不可用）
       done    流结束
     """
 
@@ -281,7 +297,9 @@ async def generate_prescription(body: PrescriptionRequestBody) -> StreamingRespo
         yield _sse("status", {"message": "正在生成运动处方", "phase": "prescription"})
         try:
             async for kind, payload in prescription_service.stream_prescription(body.record):
-                if kind == "thinking":
+                if kind == "status":
+                    yield _sse("status", {"message": payload, "phase": "prescription"})
+                elif kind == "thinking":
                     yield _sse("thinking", {"text": payload, "phase": "prescription"})
                 elif kind == "token":
                     yield _sse("token", {"text": payload, "phase": "prescription"})

@@ -14,10 +14,9 @@ def now_iso() -> str:
     return datetime.now(CST).isoformat(timespec="seconds")
 
 
-def current_versions() -> Versions:
+def current_versions(knowledge_base: str = "") -> Versions:
     return Versions(
-        exercise_library=settings.exercise_library_version,
-        knowledge_base=settings.knowledge_base_version,
+        knowledge_base=knowledge_base,
         prompt=settings.prompt_version,
         model=settings.active_model,
     )
