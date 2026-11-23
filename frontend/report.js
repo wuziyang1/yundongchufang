@@ -413,7 +413,14 @@ createApp({
       if (e.target.closest('.move-pop, .ev-pop') || e.target.closest('.sd-items .pill')) return;
       this.closePop();
     });
-    window.addEventListener('scroll', () => { if (this.pop.show && !this.refPop) this.closePop(); }, true);
+    // 滚动收起弹层只针对页面滚动；弹层自身内容超高时的内部滚动（scroll 不冒泡但会被
+    // window 捕获监听收到）不能收起，否则卡片里一滚就消失
+    window.addEventListener('scroll', (e) => {
+      if (!this.pop.show) return;
+      if (e.target instanceof Element && e.target.closest('.move-pop')) return;
+      if (this.refPop) return;
+      this.closePop();
+    }, true);
     // Esc 关闭依据卡片
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.refPop) this.closeRef();
