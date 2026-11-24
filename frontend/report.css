@@ -199,6 +199,9 @@ body {
 .info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 18px; }
 .info-grid .f { display: flex; align-items: baseline; gap: 7px; font-size: var(--fs-body); }
 .info-grid .f.wide { grid-column: span 2; }
+/* 跨两列的宽格子：下划线只贴数值宽度，不再拉满整格，
+   否则数值后拖着 400px 左右的空下划线，看着像大片排版空白 */
+.info-grid .f.wide u { flex: 0 1 auto; }
 .info-grid label { color: var(--ink-2); white-space: nowrap; }
 .info-grid u {
   flex: 1; text-decoration: none;
@@ -415,6 +418,8 @@ button.pill:hover { filter: brightness(.96); }
   position: fixed; z-index: 90;
   width: 340px; max-width: calc(100vw - 24px);
   max-height: 380px; overflow-y: auto;
+  /* 滚到边界后不再把滚动链传给页面：否则页面一滚弹层就被收起 */
+  overscroll-behavior: contain;
   background: #fff; border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 10px 30px rgba(26, 34, 50, .18);
   padding: 12px 14px;
@@ -467,6 +472,7 @@ button.pill:hover { filter: brightness(.96); }
 .ev-tags { margin: 10px 0 0; }
 .ev-body {
   margin-top: 10px; overflow-y: auto; padding-right: 6px;
+  overscroll-behavior: contain;
   font-size: var(--fs-sm); color: var(--ink-2); line-height: 1.8;
   overflow-wrap: anywhere;
 }

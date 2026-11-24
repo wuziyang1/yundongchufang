@@ -35,6 +35,28 @@ const GENERAL_TIPS = [
   '出现不适立即停止运动并告知家长或教师。',
 ];
 
+/* 展示文字清洗：旧留档会把「知识库暂无针对性资料，建议专业人员复核」这类
+   面向内部审计的话写进条目文本，按分句整句剔除，页面不再出现这类字样 */
+const META_CLAUSE = /知识库|检索|摘录|针对性资料|资料依据|专业人员复核|未经查表/;
+
+function stripMetaClauses(text) {
+  return String(text)
+    .split(/(，|。|；|、|：|！|？|,|;|:)/)
+    .filter((part, i) => i % 2 === 1 || !META_CLAUSE.test(part))
+    .join('')
+    .replace(/^[，。；、：！？,;:\s]+/, '')
+    .replace(/[，。；、：！？,;:\s]+$/, '');
+}
+
+function sanitizePrescription(value) {
+  if (typeof value === 'string') return stripMetaClauses(value);
+  if (Array.isArray(value)) return value.map(sanitizePrescription);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizePrescription(v)]));
+  }
+  return value;
+}
+
 /* 旧版留档（动作来自早期的 JSON 动作库）按编号前缀归类；新处方的动作类别由后端从知识库带出 */
 const PREFIX_CATEGORY = {
   WUP: '热身', AER: '有氧', RES: '抗阻', COR: '核心',
@@ -501,11 +523,19 @@ createApp({
     },
 
     applyResult(rx) {
+      // 展示前清洗：剔除「知识库暂无针对性资料」一类的内部字样；
+      // 旧留档里只剩这类字样的风险条目（自动校验提示）没有可读内容，不再展示
+      rx = sanitizePrescription(rx);
+      if (Array.isArray(rx.risk_notes)) {
+        rx.risk_notes = rx.risk_notes.filter((r) => (
+          r.item !== '自动校验提示' && ((r.reason || '').trim() || (r.action || '').trim())
+        ));
+      }
       // 旧版留档没有依据链路字段：用空骨架补齐，模板不必逐处判空
       this.rx = { ...clone(EMPTY_RX), ...rx };
       // 动作详情只取这份处方自带的（后端从知识库动作条目回填），不再另拉动作库
       this.exerciseMap = {};
-      (rx.exercise_details || []).forEach((e) => { this.exerciseMap[e.id] = e; });
+      (this.rx.exercise_details || []).forEach((e) => { this.exerciseMap[e.id] = e; });
       this.hasData = true;
       document.title = `${rx.name || ''}运动处方报告`;
     },

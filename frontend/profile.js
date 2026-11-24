@@ -75,10 +75,6 @@ createApp({
     overall() { return this.profile.overall || { strengths: [], weaknesses: [] }; },
     focus() { return this.profile.health_focus || []; },
 
-    /* 这份画像的等级是不是按知识库里的国标评分表查表得到的 */
-    graded() {
-      return !!(this.profile.knowledge_base && this.profile.knowledge_base.available);
-    },
     /* 国标评分条目按编号索引（S1、S2…） */
     factMap() {
       const map = {};
@@ -199,7 +195,7 @@ createApp({
     /* 旧版留档没有查表字段：用空骨架补齐，模板不必逐处判空 */
     applyProfile(profile) {
       this.profile = { ...clone(EMPTY_PROFILE), ...profile };
-      document.title = `${profile.name || ''}健康档案理解报告`;
+      document.title = `${profile.name || ''}健康档案理解`;
     },
 
     resetState() {
@@ -211,7 +207,7 @@ createApp({
       this.emergency = null;
       this.aiMessages = [];
       this.showForm = false;
-      document.title = '健康档案理解报告';
+      document.title = '健康档案理解';
     },
 
     async generate() {

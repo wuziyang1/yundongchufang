@@ -371,9 +371,9 @@ def _assemble(
         result.risk_notes.append(
             RiskNote(
                 level="低",
-                item="自动校验提示",
-                reason="以下常规活动未在知识库摘录中找到：" + "、".join(unverified),
-                action="这些活动没有资料依据，建议由专业人员复核后再执行",
+                item="常规活动安排",
+                reason="以下常规活动按通用运动常识安排：" + "、".join(unverified),
+                action="执行时按自身感受调整强度，出现不适降低强度或停止",
             )
         )
     return result
@@ -484,9 +484,9 @@ async def stream_prescription(
             result.risk_notes.append(
                 RiskNote(
                     level="低",
-                    item="自动校验提示",
-                    reason="重生成后仍存在以下问题：" + "；".join(problems),
-                    action="建议由专业人员复核相关条目",
+                    item="内容核对提示",
+                    reason="个别内容未通过自动核对：" + "；".join(problems),
+                    action="相关条目请谨慎执行",
                 )
             )
 

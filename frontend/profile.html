@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>健康档案理解报告</title>
+<title>健康档案理解</title>
 <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js"></script>
 <link rel="stylesheet" href="/static/report.css?v=20261123e" />
@@ -126,14 +126,13 @@
         </div>
 
         <div class="head-title">
-          <h1>健康档案理解报告</h1>
+          <h1>健康档案理解</h1>
           <p class="slogan">科学运动 · 健康成长 · 专业指导 · 持续改善</p>
         </div>
 
         <div class="head-meta">
           <div class="hm-row"><span>生成日期</span><b>{{ dateOnly(profile.generated_at) || '—' }}</b></div>
           <div class="hm-row"><span>模型版本</span><b>{{ profile.versions.model || '—' }}</b></div>
-          <div class="hm-row"><span>知识库版本</span><b>{{ graded ? profile.knowledge_base.fingerprint : '—' }}</b></div>
         </div>
       </header>
 
@@ -276,6 +275,6 @@
 
 <script src="/static/sse.js?v=20261118"></script>
 <script src="/static/ai-panel.js?v=20261118"></script>
-<script src="/static/profile.js?v=20261123"></script>
+<script src="/static/profile.js?v=20261124a"></script>
 </body>
 </html>
