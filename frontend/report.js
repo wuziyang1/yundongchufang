@@ -2,7 +2,7 @@ const { createApp } = Vue;
 
 const AI_TITLE = '运动处方 · 模型分析';
 
-/* 运动目的候选项：模型 goals 命中则勾选，未命中的 goals 作为「其他目标」展示 */
+/* 锻炼重点候选项：模型 goals 命中则勾选，未命中的 goals 作为「其他目标」展示 */
 const GOAL_OPTIONS = [
   { text: '提高心肺耐力', kw: ['心肺', '耐力', '有氧'] },
   { text: '增加肌肉力量', kw: ['肌肉', '力量', '抗阻'] },

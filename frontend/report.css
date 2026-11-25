@@ -275,7 +275,7 @@ body {
   content: '✓'; color: #fff; font-size: 13px; line-height: 16px; text-align: center;
 }
 
-/* ---------- 2 运动目的 ---------- */
+/* ---------- 2 锻炼重点 ---------- */
 .goal-box .lead { margin: 0 0 9px; font-size: var(--fs-md); color: var(--ink-2); }
 .goal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 12px; }
 .goal-grid label {

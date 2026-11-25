@@ -6,7 +6,7 @@
 <title>运动处方报告</title>
 <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js"></script>
-<link rel="stylesheet" href="/static/report.css?v=20261124a" />
+<link rel="stylesheet" href="/static/report.css?v=20261125a" />
 </head>
 <body>
 <div id="report">
@@ -200,11 +200,11 @@
         </div>
       </section>
 
-      <!-- 2 运动目的 -->
+      <!-- 2 锻炼重点 -->
       <section class="sec">
-        <div class="sec-head green"><i>2</i><h3>运动目的</h3></div>
+        <div class="sec-head green"><i>2</i><h3>锻炼重点</h3></div>
         <div class="sec-body boxed goal-box">
-          <p class="lead">根据体检结果与体质测试数据，推断本次处方优先改善：</p>
+          <p class="lead">根据体检结果与体质测试数据，本处方重点关注：</p>
           <div class="goal-grid">
             <label v-for="g in goalOptions" :key="g.text" :class="{ on: g.on }">
               <em></em>{{ g.text }}
@@ -438,6 +438,6 @@
 
 <script src="/static/sse.js?v=20261118"></script>
 <script src="/static/ai-panel.js?v=20261118"></script>
-<script src="/static/report.js?v=20261124"></script>
+<script src="/static/report.js?v=20261125"></script>
 </body>
 </html>
