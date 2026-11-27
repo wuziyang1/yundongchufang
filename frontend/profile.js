@@ -405,6 +405,18 @@ createApp({
     },
     closeRef() { this.refPop = null; },
 
+    /* 导出 PDF：收起浮层后走浏览器打印，对话框里选「存储为 PDF」。
+       打印前临时改页面标题，导出文件的默认文件名即带上学生姓名与日期 */
+    exportPdf() {
+      if (!this.hasData) return;
+      this.refPop = null;
+      this.aiOpen = false;
+      const old = document.title;
+      document.title = `健康档案理解_${this.profile.name || '学生'}_${this.dateOnly(this.profile.generated_at)}`;
+      window.print();
+      document.title = old;
+    },
+
     parseDate(s) {
       if (!s) return null;
       const d = new Date(s);

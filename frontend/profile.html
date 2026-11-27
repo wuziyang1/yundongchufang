@@ -6,7 +6,7 @@
 <title>健康档案理解</title>
 <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js"></script>
-<link rel="stylesheet" href="/static/report.css?v=20261123e" />
+<link rel="stylesheet" href="/static/report.css?v=20261125b" />
 <link rel="stylesheet" href="/static/profile.css?v=20261123" />
 </head>
 <body>
@@ -33,6 +33,8 @@
       ✎ 自行录入档案
     </button>
     <a class="tb-btn" :href="backHref">查看运动处方报告</a>
+    <button class="tb-btn" :disabled="!hasData || generating" @click="exportPdf"
+            title="把当前档案理解报告存为 PDF 文件：打印对话框里选择「存储为 PDF」">导出 PDF</button>
   </div>
 
   <!-- 生成进度 -->
@@ -275,6 +277,6 @@
 
 <script src="/static/sse.js?v=20261118"></script>
 <script src="/static/ai-panel.js?v=20261118"></script>
-<script src="/static/profile.js?v=20261124a"></script>
+<script src="/static/profile.js?v=20261125a"></script>
 </body>
 </html>

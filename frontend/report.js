@@ -31,7 +31,6 @@ const FITNESS_ITEMS = [
 const GENERAL_TIPS = [
   '运动前充分热身，运动后做好拉伸。',
   '抗阻训练时避免憋气，保持均匀呼吸。',
-  '关注主观感受（RPE），中等强度应微微出汗、能说话但不能唱歌。',
   '出现不适立即停止运动并告知家长或教师。',
 ];
 
@@ -604,6 +603,19 @@ createApp({
     openProfile() {
       if (!this.selectedId) return;
       location.href = '/profile?id=' + encodeURIComponent(this.selectedId);
+    },
+
+    /* 导出 PDF：收起浮层后走浏览器打印，对话框里选「存储为 PDF」。
+       打印前临时改页面标题，导出文件的默认文件名即带上学生姓名与日期 */
+    exportPdf() {
+      if (!this.hasData) return;
+      this.closePop();
+      this.refPop = null;
+      this.aiOpen = false;
+      const old = document.title;
+      document.title = `运动处方_${this.rx.name || '学生'}_${this.dateOnly(this.rx.generated_at)}`;
+      window.print();
+      document.title = old;
     },
 
     /* ---------- 自行录入 ---------- */

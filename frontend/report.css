@@ -751,3 +751,46 @@ button.pill:hover { filter: brightness(.96); }
   animation: ai-rotate .8s linear infinite;
 }
 @keyframes ai-rotate { to { transform: rotate(360deg); } }
+
+/* ---------- 打印 / 导出 PDF ----------
+   工具条上的「导出 PDF」走 window.print()：隐藏工具条与浮层，报告卡片铺满纸面，
+   在浏览器打印对话框里选择「存储为 PDF」即可。处方页与画像页共用本文件。 */
+@media print {
+  @page { size: A4; margin: 12mm; }
+
+  /* 字阶整体缩一档适配 A4 纸面（页面基准 18px → 13.5px） */
+  :root {
+    --fs-xs: 10.5px;
+    --fs-sm: 11.5px;
+    --fs-md: 12px;
+    --fs-body: 12.5px;
+    --fs-base: 13.5px;
+    --fs-lg: 15px;
+  }
+
+  /* 界面元素不进 PDF：工具条、进度条、表单、AI 抽屉、弹层 */
+  .toolbar, .gen-bar, .gen-alert, .form-panel,
+  .ai-drawer, .move-pop, .ev-mask, .sched-tabs { display: none !important; }
+
+  /* 徽标、标签、色块保留底色（浏览器默认不打印背景色） */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body { background: #fff; }
+
+  .sheet-wrap { display: block; padding: 0; }
+  .sheet-wrap.pending { opacity: 1; filter: none; }
+  .sheet {
+    max-width: none; padding: 0;
+    box-shadow: none; border-radius: 0;
+  }
+
+  /* 课表横向滚动在纸上放开，表头每页重复 */
+  .dt-scroll { overflow: visible; }
+  .sched-table thead { display: table-header-group; }
+  .sched-table tr { break-inside: avoid; }
+
+  /* 分页：区块标题不与内容分离，卡片不被拦腰截断 */
+  .sec-head, .sub-title, .sched-banner { break-after: avoid; }
+  .plan-card, .dim-card, .focus-card, .fit-item,
+  .wg, .risk, .forbid, .ov-block, .rpt-bottom { break-inside: avoid; }
+}

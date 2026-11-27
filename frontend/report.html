@@ -6,7 +6,7 @@
 <title>运动处方报告</title>
 <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/marked@12.0.2/marked.min.js"></script>
-<link rel="stylesheet" href="/static/report.css?v=20261125a" />
+<link rel="stylesheet" href="/static/report.css?v=20261125b" />
 </head>
 <body>
 <div id="report">
@@ -32,6 +32,8 @@
     </button>
     <button class="tb-btn" :disabled="!selectedId" @click="openProfile"
             title="查看第一阶段档案理解（体质画像）的分析结果">查看档案理解报告</button>
+    <button class="tb-btn" :disabled="!hasData || generating" @click="exportPdf"
+            title="把当前处方报告存为 PDF 文件：打印对话框里选择「存储为 PDF」">导出 PDF</button>
   </div>
 
   <!-- 生成进度 -->
@@ -335,7 +337,6 @@
               <h4>监测建议</h4>
               <ul class="mon">
                 <li><span>心率监测</span>运动中控制在 {{ hrText }}</li>
-                <li><span>主观感受</span>RPE {{ rx.intensity_control.rpe_range || '—' }}<template v-if="rx.intensity_control.rpe_scale">（{{ rx.intensity_control.rpe_scale }}量表）</template> 为宜</li>
                 <li><span>谈话测试</span>{{ rx.intensity_control.talk_test || '—' }}</li>
                 <li class="stop"><span>立即停止</span>{{ stopSignals }}</li>
               </ul>
@@ -438,6 +439,6 @@
 
 <script src="/static/sse.js?v=20261118"></script>
 <script src="/static/ai-panel.js?v=20261118"></script>
-<script src="/static/report.js?v=20261125"></script>
+<script src="/static/report.js?v=20261127a"></script>
 </body>
 </html>
